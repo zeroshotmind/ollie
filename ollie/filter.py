@@ -76,6 +76,17 @@ Rules:
 
 Reply with the sentences to speak and nothing else."""
 
+# A tone shapes delivery, never content. Facts stay identical across tones.
+TONES = {
+    "neutral": None,
+    "warm": ("friendly and encouraging, like a supportive pair-programming buddy — "
+             "it is fine to sound pleased when something works"),
+    "snarky": ("dry wit and light sarcasm, like a colleague who has seen everything — "
+               "wry about the code and the tools, never about the user"),
+    "minimal": ("telegraphic — the fewest words that still carry every fact, "
+                "no pleasantries, no filler"),
+}
+
 # Things a small model leaks when it is confused about the format.
 _LABEL_LEAK = re.compile(
     r"^\s*(new events|already spoken|you say|events|response|output)\s*:?\s*",
@@ -214,6 +225,16 @@ class OllamaFilter:
         self.history.append(text[:220])
         return text
 
+    def _system_prompt(self, style: str) -> str:
+        if style == "full":
+            base = SYSTEM_PROMPT_FULL
+        else:
+            base = SYSTEM_PROMPT_BRIEF.format(max_words=self.cfg.max_words)
+        tone = TONES.get(getattr(self.cfg, "tone", "neutral"))
+        if tone:
+            base += f"\n\nDelivery tone: {tone}"
+        return base
+
     def _verbatim(self, chunks: list[Chunk]) -> str | None:
         parts = []
         for chunk in chunks:
@@ -248,12 +269,8 @@ class OllamaFilter:
     def _ask(self, events: str, style: str = "brief") -> str:
         spoken = "\n".join(f"- {line}" for line in self.history) or "(nothing yet)"
         user = f"ALREADY SPOKEN:\n{spoken}\n\nNEW EVENTS:\n{events}"
-        if style == "full":
-            system = SYSTEM_PROMPT_FULL
-            predict = 400
-        else:
-            system = SYSTEM_PROMPT_BRIEF.format(max_words=self.cfg.max_words)
-            predict = 90
+        system = self._system_prompt(style)
+        predict = 400 if style == "full" else 90
         payload = {
             "model": self.cfg.ollama_model,
             "messages": [

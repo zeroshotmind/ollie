@@ -53,6 +53,10 @@ class Config:
     # verbatim — the agent's own words, no model in the loop
     style: str = "brief"
 
+    # How the narration is delivered (ignored by verbatim, which has no voice
+    # of its own by definition): neutral | warm | snarky | minimal
+    tone: str = "neutral"
+
     # ---------- filter / dedup ----------
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:3b-instruct"
@@ -71,6 +75,16 @@ class Config:
     hotkey: str = "right option"    # or "caps lock", "f13", "cmd_r" … see ollie/hotkey.py
     hotkey_mode: str = "hold"       # hold | toggle
     max_record_seconds: float = 60.0
+
+    # ---------- autopilot ----------
+    autopilot: bool = False
+    autopilot_goal: str = ""
+    autopilot_max_turns: int = 15
+    autopilot_idle: float = 75.0     # quiet seconds that count as end-of-turn
+    autopilot_settle: float = 2.5    # wait after a turn ends before deciding
+    autopilot_model: str = ""        # empty = same model as the filter
+    autopilot_frontmost: str = ("Terminal,iTerm,WezTerm,kitty,Alacritty,"
+                                "Ghostty,Warp,Visual Studio Code,Code,Cursor,Windsurf")
 
     # ---------- injection ----------
     inject_mode: str = "paste"      # paste | type

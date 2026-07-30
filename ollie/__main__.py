@@ -79,6 +79,14 @@ def _parse_args(argv):
     p.add_argument("--voice", help="macOS voice name (say -v '?' to list)")
     p.add_argument("--rate", type=int, help="words per minute")
     p.add_argument("--model", dest="ollama_model", help="Ollama model for the filter")
+    p.add_argument("--autopilot", action="store_true", default=None,
+                   help="arm autopilot at startup (give the goal with --goal)")
+    p.add_argument("--goal", dest="autopilot_goal",
+                   help="the goal autopilot should drive the agent toward")
+    p.add_argument("--tone", choices=["neutral", "warm", "snarky", "minimal"],
+                   help="delivery tone for brief/full narration")
+    p.add_argument("--list-voices", action="store_true",
+                   help="list installed narration voices and exit")
     p.add_argument("--style", choices=["brief", "full", "verbatim"],
                    help="narration style: brief (terse), full (loss-less), "
                         "verbatim (the agent's own words)")
@@ -252,10 +260,19 @@ def main(argv=None) -> int:
     _fix_multiprocessing()
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     overrides = {k: v for k, v in vars(args).items()
-                 if k not in ("doctor", "list_sessions", "say", "test_hotkey")
+                 if k not in ("doctor", "list_sessions", "say", "test_hotkey",
+                              "list_voices")
                  and v is not None}
     cfg = Config.load(overrides)
     _setup_logging(cfg.verbose)
+
+    if args.list_voices:
+        from .tts import list_voices
+        for name, locale in list_voices():
+            marker = "*" if name == cfg.voice else " "
+            print(f"{marker} {name:28} {locale}")
+        print("\nPreview one with:  ./run.sh --voice NAME --say 'hello there'")
+        return 0
 
     if args.list_sessions:
         reader = ClaudeCodeReader(cfg)
@@ -290,6 +307,8 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGTERM, shutdown)
 
     narrator.start()
+    if cfg.autopilot or cfg.autopilot_goal:
+        narrator.autopilot.arm(cfg.autopilot_goal)
     from .hotkey import pretty as pretty_key
 
     verb = "Hold" if cfg.hotkey_mode == "hold" else "Tap"

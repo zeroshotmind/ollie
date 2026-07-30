@@ -71,16 +71,17 @@ class Injector:
         self.cfg = cfg
 
     # ------------------------------------------------------------------
-    def inject(self, text: str) -> bool:
+    def inject(self, text: str, press_enter: bool | None = None) -> bool:
         text = (text or "").strip()
         if not text:
             return False
+        do_enter = self.cfg.press_enter if press_enter is None else press_enter
         try:
             if self.cfg.inject_mode == "type":
                 self._type(text)
             else:
                 self._paste(text)
-            if self.cfg.press_enter:
+            if do_enter:
                 time.sleep(0.05)
                 self._tap(_KEY_RETURN, 0)
             return True

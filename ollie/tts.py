@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -23,6 +24,41 @@ from .config import Config
 from .state import AppState
 
 log = logging.getLogger("ollie.tts")
+
+
+# Voices nobody wants narrating their code (sound effects and gag voices).
+_NOVELTY = {
+    "Albert", "Bad News", "Bahh", "Bells", "Boing", "Bubbles", "Cellos",
+    "Deranged", "Good News", "Jester", "Organ", "Superstar", "Trinoids",
+    "Whisper", "Wobble", "Zarvox", "Ralph", "Fred", "Junior", "Kathy",
+}
+
+_VOICE_LINE = re.compile(r"^(?P<name>.+?)\s{2,}(?P<locale>[a-zA-Z]{2}[_-][A-Za-z_-]+)\s+#")
+
+
+def parse_voice_listing(listing: str) -> list[tuple[str, str]]:
+    """Parse `say -v ?` output into (name, locale) pairs."""
+    voices = []
+    for line in listing.splitlines():
+        match = _VOICE_LINE.match(line)
+        if match:
+            voices.append((match.group("name").strip(), match.group("locale")))
+    return voices
+
+
+def list_voices(english_only: bool = True, include_novelty: bool = False) -> list[tuple[str, str]]:
+    """Installed `say` voices, curated for narration."""
+    try:
+        proc = subprocess.run(["say", "-v", "?"], capture_output=True, text=True, timeout=10)
+        voices = parse_voice_listing(proc.stdout)
+    except Exception as exc:
+        log.warning("could not list voices: %s", exc)
+        return []
+    if english_only:
+        voices = [v for v in voices if v[1].lower().startswith("en")]
+    if not include_novelty:
+        voices = [v for v in voices if v[0] not in _NOVELTY]
+    return sorted(voices)
 
 
 class SayTTS:
