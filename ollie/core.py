@@ -20,7 +20,7 @@ from .message import Chunk
 from .readers.base import Reader
 from .state import AppState, State
 from .stt import WhisperSTT
-from .tts import SayTTS
+from .tts import make_tts
 
 log = logging.getLogger("ollie.core")
 
@@ -42,7 +42,7 @@ class Narrator:
         self.state = AppState()
         self.reader = reader
         self.filter = OllamaFilter(cfg)
-        self.tts = SayTTS(cfg, self.state)
+        self.tts = make_tts(cfg, self.state)
         self.stt = WhisperSTT(cfg, self.state)
         self.injector = Injector(cfg)
         self.ptt = PushToTalk(cfg, self._on_talk_start, self._on_talk_stop)
@@ -67,6 +67,8 @@ class Narrator:
         self._spawn(self._read_loop, "reader")
         self._spawn(self._narrate_loop, "narrator")
         self._spawn(self.stt.warmup, "whisper-warmup")
+        if hasattr(self.tts, "warmup"):
+            self._spawn(self.tts.warmup, "tts-warmup")
         if self.ptt.start():
             self._spawn(self._watch_hotkey, "hotkey-watchdog")
 
@@ -229,7 +231,29 @@ class Narrator:
         self._persist()
         log.info("narration style: %s", style)
 
+    def set_engine(self, engine: str) -> None:
+        if engine not in ("say", "kokoro") or engine == self.cfg.tts_engine:
+            return
+        self.cfg.tts_engine = engine
+        self._persist()
+        self.tts.stop()
+        self.tts = make_tts(self.cfg, self.state)
+        log.info("tts engine: %s", type(self.tts).__name__)
+        if hasattr(self.tts, "warmup"):
+            def warm_and_preview():
+                self.tts.warmup()
+                self.tts.speak("Switched to the neural voice.")
+            threading.Thread(target=warm_and_preview, daemon=True).start()
+        else:
+            self._speak_aside("Switched to the system voice.")
+
     def set_voice(self, voice: str) -> None:
+        if self.cfg.tts_engine == "kokoro":
+            self.cfg.kokoro_voice = voice
+            self._persist()
+            log.info("kokoro voice: %s", voice)
+            self._speak_aside(f"This is the {voice.split('_')[-1]} voice.")
+            return
         self.cfg.voice = voice
         self._persist()
         log.info("voice: %s", voice)

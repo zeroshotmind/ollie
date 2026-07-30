@@ -66,8 +66,14 @@ class Config:
     max_words: int = 28
 
     # ---------- tts ----------
-    voice: str = "Samantha"
-    rate: int = 210
+    # say    — zero-dependency macOS voices, instant
+    # kokoro — neural, noticeably more natural, needs mlx-audio + misaki[en]
+    tts_engine: str = "say"
+    voice: str = "Samantha"          # say engine
+    rate: int = 210                  # say engine, words per minute
+    kokoro_model: str = "mlx-community/Kokoro-82M-bf16"
+    kokoro_voice: str = "af_heart"
+    kokoro_speed: float = 1.1
 
     # ---------- stt ----------
     whisper_repo: str = "mlx-community/whisper-base.en-mlx"

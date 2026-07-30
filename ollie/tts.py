@@ -143,8 +143,6 @@ class SayTTS:
         self.state.set_amplitude(0.0)
 
     def _play(self, path: str) -> None:
-        import sounddevice as sd
-
         with wave.open(path, "rb") as handle:
             channels = handle.getnchannels()
             rate = handle.getframerate()
@@ -153,35 +151,153 @@ class SayTTS:
         audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
         if channels > 1:
             audio = audio.reshape(-1, channels).mean(axis=1)
-        if audio.size == 0:
+        play_array(audio, rate, self.state, self._interrupt)
+
+
+def play_array(audio: "np.ndarray", rate: int, state: AppState,
+               interrupt: threading.Event) -> None:
+    """Play mono float32 audio, publishing the live amplitude for the orb."""
+    import sounddevice as sd
+
+    if audio.size == 0:
+        return
+    done = threading.Event()
+    cursor = {"i": 0}
+
+    def callback(outdata, frame_count, _time, _status):
+        start = cursor["i"]
+        end = start + frame_count
+        block = audio[start:end]
+        cursor["i"] = end
+        if block.size:
+            level = float(np.sqrt(np.mean(np.square(block))))
+            state.set_amplitude(min(1.0, level * 2.5))
+        if block.size < frame_count:
+            outdata[: block.size, 0] = block
+            outdata[block.size:, 0] = 0.0
+            raise sd.CallbackStop
+        outdata[:, 0] = block
+
+    stream = sd.OutputStream(
+        samplerate=rate, channels=1, dtype="float32",
+        callback=callback, finished_callback=done.set, blocksize=1024,
+    )
+    with stream:
+        while not done.wait(0.05):
+            if interrupt.is_set():
+                break
+    state.set_amplitude(0.0)
+
+
+# ----------------------------------------------------------------------
+# Kokoro engine (neural, MLX, fully offline)
+# ----------------------------------------------------------------------
+KOKORO_VOICES = [
+    "af_heart", "af_bella", "af_nicole", "af_sarah", "af_sky",
+    "am_adam", "am_michael", "bf_emma", "bf_isabella", "bm_george", "bm_lewis",
+]
+
+
+class KokoroTTS:
+    """Kokoro-82M via mlx-audio. Same interface as SayTTS.
+
+    Warm synthesis on Apple Silicon runs ~50x faster than real time, so it is
+    actually cheaper per utterance than shelling out to `say` — the cost is a
+    one-time model download and an ~8s load at startup (done in warmup()).
+    Any failure falls back to SayTTS for that utterance, so narration never
+    goes silent because of the fancier engine.
+    """
+
+    SAMPLE_RATE = 24000
+
+    def __init__(self, cfg: Config, state: AppState) -> None:
+        self.cfg = cfg
+        self.state = state
+        self._interrupt = threading.Event()
+        self._lock = threading.Lock()
+        self._model = None
+        self._model_lock = threading.Lock()
+        self._fallback: SayTTS | None = None
+
+    # -- lifecycle -----------------------------------------------------
+    def warmup(self) -> None:
+        try:
+            self._ensure_model()
+            with self._model_lock:
+                list(self._model.generate("Ready.", voice=self.cfg.kokoro_voice))
+            log.info("kokoro ready (%s, voice %s)", self.cfg.kokoro_model, self.cfg.kokoro_voice)
+        except Exception as exc:
+            log.error("kokoro warmup failed (%s) — will fall back to `say`", exc)
+
+    def _ensure_model(self):
+        if self._model is None:
+            from mlx_audio.tts.utils import load_model
+
+            self._model = load_model(self.cfg.kokoro_model)
+        return self._model
+
+    # -- interface -----------------------------------------------------
+    def speak(self, text: str) -> None:
+        text = (text or "").strip()
+        if not text:
             return
+        with self._lock:
+            self._interrupt.clear()
+            audio = self._generate(text)
+            if audio is None:
+                self._say_fallback(text)
+                return
+            try:
+                play_array(audio, self.SAMPLE_RATE, self.state, self._interrupt)
+            finally:
+                self.state.set_amplitude(0.0)
 
-        done = threading.Event()
-        cursor = {"i": 0}
+    def stop(self) -> None:
+        self._interrupt.set()
+        if self._fallback is not None:
+            self._fallback.stop()
 
-        def callback(outdata, frame_count, _time, _status):
-            start = cursor["i"]
-            end = start + frame_count
-            block = audio[start:end]
-            cursor["i"] = end
-            if block.size:
-                level = float(np.sqrt(np.mean(np.square(block))))
-                self.state.set_amplitude(min(1.0, level * 2.5))
-            if block.size < frame_count:
-                outdata[: block.size, 0] = block
-                outdata[block.size:, 0] = 0.0
-                raise sd.CallbackStop
-            outdata[:, 0] = block
+    @property
+    def interrupted(self) -> bool:
+        return self._interrupt.is_set()
 
-        stream = sd.OutputStream(
-            samplerate=rate,
-            channels=1,
-            dtype="float32",
-            callback=callback,
-            finished_callback=done.set,
-            blocksize=1024,
-        )
-        with stream:
-            while not done.wait(0.05):
-                if self._interrupt.is_set():
-                    break
+    # -- internals -----------------------------------------------------
+    def _generate(self, text: str):
+        try:
+            model = self._ensure_model()
+            with self._model_lock:
+                segments = list(model.generate(
+                    text, voice=self.cfg.kokoro_voice, speed=self.cfg.kokoro_speed,
+                ))
+            if not segments:
+                return None
+            audio = np.concatenate([np.asarray(s.audio, dtype=np.float32) for s in segments])
+            if not audio.size:
+                return None
+            # Kokoro masters quiet (~0.3 peak); bring it up to `say` levels so
+            # volume does not jump between engines and the orb animates fully.
+            peak = float(np.abs(audio).max())
+            if peak > 1e-6:
+                audio = audio * (0.85 / max(peak, 0.85))
+            return audio
+        except Exception as exc:
+            log.warning("kokoro synthesis failed (%s) — using `say` for this line", exc)
+            return None
+
+    def _say_fallback(self, text: str) -> None:
+        if self._fallback is None:
+            self._fallback = SayTTS(self.cfg, self.state)
+        self._fallback.speak(text)
+
+
+def make_tts(cfg: Config, state: AppState):
+    """Build the configured TTS engine; `say` is the always-works default."""
+    if cfg.tts_engine == "kokoro":
+        try:
+            import mlx_audio  # noqa: F401
+
+            return KokoroTTS(cfg, state)
+        except Exception as exc:
+            log.error("kokoro engine unavailable (%s) — using `say`. "
+                      "Install with: uv pip install mlx-audio 'misaki[en]'", exc)
+    return SayTTS(cfg, state)
