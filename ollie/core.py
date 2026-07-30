@@ -12,6 +12,7 @@ import threading
 import time
 
 from .config import Config
+from .autopilot import Autopilot
 from .filter import OllamaFilter
 from .hotkey import PushToTalk
 from .injector import Injector
@@ -45,6 +46,12 @@ class Narrator:
         self.stt = WhisperSTT(cfg, self.state)
         self.injector = Injector(cfg)
         self.ptt = PushToTalk(cfg, self._on_talk_start, self._on_talk_stop)
+        self.autopilot = Autopilot(
+            cfg,
+            inject=lambda text: self.injector.inject(text, press_enter=True),
+            speak=self._speak_aside,
+            frontmost=_frontmost_app,
+        )
         self.queue: queue.Queue[Chunk] = queue.Queue()
         self.muted = False
         self._threads: list[threading.Thread] = []
@@ -69,6 +76,7 @@ class Narrator:
         self.ptt.stop()
         self.reader.stop()
         self.filter.close()
+        self.autopilot.close()
 
     def _spawn(self, target, name: str) -> None:
         thread = threading.Thread(target=target, name=name, daemon=True)
@@ -91,6 +99,12 @@ class Narrator:
     def _narrate_loop(self) -> None:
         while self.state.running:
             batch = self._collect_batch()
+            if not batch:
+                continue
+
+            for chunk in batch:
+                self.autopilot.observe(chunk)
+            batch = [c for c in batch if c.role != "turn_end"]
             if not batch:
                 continue
 
@@ -183,6 +197,10 @@ class Narrator:
         except Exception:
             log.exception("recording failed")
             text = ""
+        if text and self.autopilot.awaiting_goal:
+            self.autopilot.set_goal(text)
+            self.state.set(State.IDLE)
+            return
         if text:
             target = _frontmost_app()
             if self.injector.inject(text):
@@ -194,16 +212,48 @@ class Narrator:
         self.state.set(State.IDLE)
 
     # ------------------------------------------------------------------
+    def _speak_aside(self, text: str) -> None:
+        """Status lines from autopilot — spoken unless muted, never queued."""
+        if self.muted:
+            return
+        threading.Thread(target=self.tts.speak, args=(text,), daemon=True).start()
+
+    def toggle_autopilot(self) -> bool:
+        return self.autopilot.toggle()
+
     def set_style(self, style: str) -> None:
         """Runtime style switch (also persisted, so it survives restarts)."""
         if style not in ("brief", "full", "verbatim"):
             return
         self.cfg.style = style
+        self._persist()
+        log.info("narration style: %s", style)
+
+    def set_voice(self, voice: str) -> None:
+        self.cfg.voice = voice
+        self._persist()
+        log.info("voice: %s", voice)
+        # A short preview so the choice is audible immediately.
+        threading.Thread(
+            target=self.tts.speak,
+            args=(f"Hi, this is {voice}. I'll narrate your session.",),
+            daemon=True,
+        ).start()
+
+    def set_tone(self, tone: str) -> None:
+        from .filter import TONES
+
+        if tone not in TONES:
+            return
+        self.cfg.tone = tone
+        self._persist()
+        log.info("tone: %s", tone)
+
+    def _persist(self) -> None:
         try:
             self.cfg.save()
         except Exception:
-            log.debug("could not persist style change", exc_info=True)
-        log.info("narration style: %s", style)
+            log.debug("could not persist config change", exc_info=True)
 
     def toggle_mute(self) -> bool:
         self.muted = not self.muted

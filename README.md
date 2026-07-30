@@ -156,6 +156,60 @@ is backed up first.
 Switch with `--style full`, by right-clicking the orb, or by setting `style`
 in `~/.ollie/config.json`. Changes made from the orb menu persist.
 
+## Autopilot
+
+Armed, Ollie stops being a narrator and becomes a driver: at the end of each
+agent turn it hands your goal plus the agent's latest output to the local
+model, which either declares the goal achieved or authors the next instruction
+— typed into the terminal with Enter pressed.
+
+```bash
+./run.sh --autopilot --goal "make the failing tests in test_auth pass"
+```
+
+Or arm it live: right-click the orb → **Autopilot — arm**, then hold the talk
+key and *speak* the goal. The orb wears a pulsing amber ring while armed.
+
+The first prompt sent is your goal, verbatim. After that the model reacts to
+whatever the agent did: answers its questions decisively, tells it to fix its
+errors, pushes it to the next step, and replies `DONE` when the output shows
+the goal is met (spoken aloud: "Goal complete").
+
+Guardrails, because autopilot types into your focused window:
+
+- injects **only while a terminal app is frontmost** (list configurable via
+  `autopilot_frontmost`); otherwise it waits, tells you, and gives up after 3
+  minutes
+- hard cap of `autopilot_max_turns` (default 15) per goal
+- authoring the same instruction twice in a row = stalled → disarms and says so
+- authored text that just echoes the agent's output is discarded, never typed
+- disarm any time from the orb menu; speaking a new goal always wins
+
+Turn ends are detected from the transcript's own end-of-turn records, with an
+idle timer (`autopilot_idle`, 75s) as fallback. If Ollama is unreachable the
+turn is skipped and retried — nothing is ever injected on a failure path.
+
+## Voice and tone
+
+**Voice** is who speaks: any installed macOS voice. `./run.sh --list-voices`
+shows what you have (System Settings → Accessibility → Spoken Content →
+Manage Voices to download nicer ones — the Siri and Enhanced voices work).
+Pick from the orb's right-click **Voice** menu (you hear a preview instantly),
+or `--voice Daniel --rate 190`.
+
+**Tone** is how the narration is written, applied at the filter — facts stay
+identical across tones:
+
+| Tone | Flavour |
+|---|---|
+| `neutral` (default) | plain colleague-over-the-shoulder |
+| `warm` | friendly, encouraging |
+| `snarky` | dry wit — about the code, never about you |
+| `minimal` | telegraphic, fewest words that carry every fact |
+
+Orb menu → **Tone**, or `--tone snarky`. Verbatim style ignores tone, since
+there the agent's own words are the whole point.
+
 ## Tuning
 
 Flags override `~/.ollie/config.json`, which overrides the defaults in

@@ -385,6 +385,12 @@ class ClaudeCodeReader(Reader):
                     out.append(chunk)
             return out
 
+        if kind == "system" and record.get("subtype") == "turn_duration":
+            # Claude Code writes this when a turn completes — the signal
+            # autopilot uses to know the agent is waiting for input.
+            chunk = self._make("turn_end", "turn ended", f"{record.get('uuid')}:turn")
+            return [chunk] if chunk else []
+
         if kind == "user" and self.cfg.speak_tool_results:
             message = record.get("message") or {}
             content = message.get("content")

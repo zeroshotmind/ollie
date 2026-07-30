@@ -199,3 +199,102 @@ def test_verbatim_keeps_everything_brief_would_drop():
     text = clean_for_verbatim("see https://example.com/docs and /a/b/config.yaml")
     assert "https://example.com/docs" in text      # loss-less: URL kept
     assert "/a/b/config.yaml" in text              # loss-less: path kept
+
+
+def test_voice_listing_parses_say_output():
+    from ollie.tts import parse_voice_listing
+
+    sample = (
+        "Samantha            en_US    # Hello! My name is Samantha.\n"
+        "Bad News            en_US    # The light you see...\n"
+        "Flo (English (UK))  en_GB    # Hello! My name is Flo.\n"
+        "Amélie              fr_CA    # Bonjour!\n"
+    )
+    voices = parse_voice_listing(sample)
+    assert ("Samantha", "en_US") in voices
+    assert ("Flo (English (UK))", "en_GB") in voices
+    assert ("Amélie", "fr_CA") in voices
+
+
+def test_tone_shapes_prompt_not_facts():
+    from ollie.filter import TONES, OllamaFilter
+
+    cfg = Config.load({"tone": "snarky", "ollama_url": "http://127.0.0.1:1"})
+    flt = OllamaFilter(cfg)
+    prompt = flt._system_prompt("brief")
+    assert TONES["snarky"] in prompt
+    cfg.tone = "neutral"
+    assert "Delivery tone" not in flt._system_prompt("brief")
+    flt.close()
+
+
+def test_reader_emits_turn_end_markers(tmp_path):
+    reader, transcript = _reader(tmp_path)
+    _write(transcript, [
+        _assistant("a1", [{"type": "text", "text": "All done, tests pass."}]),
+        {"type": "system", "subtype": "turn_duration", "uuid": "s1", "durationMs": 1200},
+    ])
+    chunks = reader.poll()
+    assert [c.role for c in chunks] == ["assistant", "turn_end"]
+    _write(transcript, [{"type": "system", "subtype": "turn_duration", "uuid": "s1"}])
+    assert reader.poll() == []          # same uuid, deduped
+
+
+def test_autopilot_reply_parsing():
+    from ollie.autopilot import parse_reply
+
+    assert parse_reply("DONE: all 14 tests pass") == ("done", "all 14 tests pass")
+    assert parse_reply("  prompt: Run the test suite again ") ==         ("prompt", "Run the test suite again")
+    assert parse_reply("PROMPT:\nFix the failing\nimport") ==         ("prompt", "Fix the failing import")
+    kind, _ = parse_reply("Sure! Here's what I think you should do next...")
+    assert kind == "invalid"
+    assert parse_reply("PROMPT:")[0] == "invalid"
+    assert parse_reply("PROMPT: " + "x " * 600)[1].__len__() <= 500
+
+
+def test_autopilot_turn_flow_without_a_model():
+    from ollie.autopilot import Autopilot
+
+    injected, spoken = [], []
+    cfg = Config.load({"autopilot_settle": 0.0, "autopilot_max_turns": 3,
+                       "ollama_url": "http://127.0.0.1:1"})
+    pilot = Autopilot(cfg, inject=lambda t: injected.append(t) or True,
+                      speak=spoken.append, frontmost=lambda: "Terminal")
+    pilot._ask = lambda: "PROMPT: run the tests"
+    pilot.enabled = True
+    pilot.goal = "make tests pass"
+
+    pilot.observe(Chunk(role="assistant", text="I fixed the import."))
+    pilot._advance()
+    assert injected == ["run the tests"] and pilot.turns == 1
+
+    # same authored prompt again -> stall detection disarms
+    pilot.observe(Chunk(role="assistant", text="Ran them."))
+    pilot._advance()
+    assert pilot.enabled is False and len(injected) == 1
+    assert any("stalled" in s.lower() for s in spoken)
+
+    # DONE path
+    pilot.enabled, pilot.sent, pilot.turns = True, [], 0
+    pilot._ask = lambda: "DONE: tests are green"
+    pilot.observe(Chunk(role="assistant", text="14 passed."))
+    pilot._advance()
+    assert pilot.enabled is False
+    assert any("Goal complete" in s for s in spoken)
+    pilot.close()
+
+
+def test_autopilot_respects_frontmost_gate():
+    from ollie.autopilot import Autopilot
+
+    injected = []
+    cfg = Config.load({"autopilot_settle": 0.0})
+    pilot = Autopilot(cfg, inject=lambda t: injected.append(t) or True,
+                      speak=lambda s: None, frontmost=lambda: "Safari")
+    pilot.enabled = True
+    pilot.goal = "g"
+    # patch the retry loop to a single check
+    pilot._is_terminal = lambda app: "terminal" in app.lower()
+    assert not pilot._is_terminal("Safari")
+    assert pilot._is_terminal("Terminal")
+    pilot.close()

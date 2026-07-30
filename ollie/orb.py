@@ -152,6 +152,14 @@ class OrbView(NSView):
         _color((1.0, 1.0, 1.0), 0.20 + 0.18 * self.level).set()
         _circle(cx - radius * 0.28, cy + radius * 0.30, radius * 0.20).fill()
 
+        pilot = getattr(self.controller, "autopilot", None)
+        if pilot is not None and pilot.enabled:
+            ring = _circle(cx, cy, radius * 1.42)
+            ring.setLineWidth_(2.2)
+            pulse = 0.55 + 0.25 * math.sin(elapsed * 2.6)
+            _color((1.0, 0.62, 0.18), pulse).set()
+            ring.stroke()
+
         if getattr(self.controller, "muted", False):
             slash = NSBezierPath.bezierPath()
             slash.moveToPoint_(NSMakePoint(cx - radius * 0.62, cy - radius * 0.62))
@@ -197,6 +205,16 @@ class OrbView(NSView):
 
         muted = bool(getattr(self.controller, "muted", False))
         self._add(menu, "Unmute narration" if muted else "Mute narration", "toggleMute:")
+
+        pilot = getattr(self.controller, "autopilot", None)
+        if pilot is not None:
+            if pilot.enabled:
+                goal = (pilot.goal[:40] + "…") if len(pilot.goal) > 40 else pilot.goal
+                label = (f"Autopilot ON ({pilot.turns}/{pilot.cfg.autopilot_max_turns}"
+                         f"{': ' + goal if goal else ', waiting for goal'}) — disarm")
+            else:
+                label = "Autopilot — arm (then speak the goal)"
+            self._add(menu, label, "toggleAutopilot:")
         menu.addItem_(NSMenuItem.separatorItem())
 
         current = getattr(getattr(self.controller, "cfg", None), "style", "brief")
@@ -205,6 +223,10 @@ class OrbView(NSView):
                              ("verbatim", "Verbatim — the agent's own words")):
             item = self._add(menu, label, f"setStyle{style.capitalize()}:")
             item.setState_(1 if style == current else 0)
+        cfg = getattr(self.controller, "cfg", None)
+        self._submenu(menu, "Voice", self._voice_items(cfg), "pickVoice:")
+        self._submenu(menu, "Tone", self._tone_items(cfg), "pickTone:")
+
         menu.addItem_(NSMenuItem.separatorItem())
         self._add(menu, "Accessibility settings…", "openAccess:")
         self._add(menu, "Input Monitoring settings…", "openInput:")
@@ -227,6 +249,54 @@ class OrbView(NSView):
     def toggleMute_(self, sender):
         if self.controller is not None:
             self.controller.toggle_mute()
+
+    def toggleAutopilot_(self, sender):
+        if self.controller is not None:
+            self.controller.toggle_autopilot()
+
+    @objc.python_method
+    def _voice_items(self, cfg):
+        from .tts import list_voices
+
+        current = getattr(cfg, "voice", "")
+        names = [name for name, _ in list_voices()][:14]
+        if current and current not in names:
+            names.insert(0, current)
+        return [(name, name, name == current) for name in names]
+
+    @objc.python_method
+    def _tone_items(self, cfg):
+        current = getattr(cfg, "tone", "neutral")
+        return [
+            ("Neutral", "neutral", current == "neutral"),
+            ("Warm", "warm", current == "warm"),
+            ("Snarky", "snarky", current == "snarky"),
+            ("Minimal", "minimal", current == "minimal"),
+        ]
+
+    @objc.python_method
+    def _submenu(self, menu, title, items, action):
+        parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, None, "")
+        sub = NSMenu.alloc().initWithTitle_(title)
+        for label, value, checked in items:
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                label, objc.selector(getattr(self, action.replace(":", "_")),
+                                     signature=b"v@:@"), ""
+            )
+            item.setTarget_(self)
+            item.setRepresentedObject_(value)
+            item.setState_(1 if checked else 0)
+            sub.addItem_(item)
+        parent.setSubmenu_(sub)
+        menu.addItem_(parent)
+
+    def pickVoice_(self, sender):
+        if self.controller is not None:
+            self.controller.set_voice(sender.representedObject())
+
+    def pickTone_(self, sender):
+        if self.controller is not None:
+            self.controller.set_tone(sender.representedObject())
 
     @objc.python_method
     def _set_style(self, style):
