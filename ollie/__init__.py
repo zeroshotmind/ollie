@@ -1,0 +1,3 @@
+"""Ollie — a voice narrator for terminal coding agents."""
+
+__version__ = "0.1.0"
