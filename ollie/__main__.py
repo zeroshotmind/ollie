@@ -76,6 +76,8 @@ def _parse_args(argv):
                    help="replay the whole transcript instead of joining at the tail")
     p.add_argument("--no-orb", dest="orb", action="store_false", default=None,
                    help="run without the floating orb window")
+    p.add_argument("--engine", dest="tts_engine", choices=["say", "kokoro"],
+                   help="TTS engine: say (instant, zero setup) or kokoro (neural)")
     p.add_argument("--voice", help="macOS voice name (say -v '?' to list)")
     p.add_argument("--rate", type=int, help="words per minute")
     p.add_argument("--model", dest="ollama_model", help="Ollama model for the filter")
@@ -190,6 +192,17 @@ def _doctor(cfg: Config) -> int:
 
     import shutil
     report(shutil.which("say") is not None, "macOS `say` available", "`say` not on PATH")
+
+    if cfg.tts_engine == "kokoro":
+        try:
+            import mlx_audio  # noqa: F401
+            import misaki  # noqa: F401
+            report(True, f"kokoro engine ready (voice {cfg.kokoro_voice})", "")
+        except Exception as exc:
+            report(False, "", f"kokoro engine selected but not installed ({exc}).\n"
+                   "     uv pip install mlx-audio 'misaki[en]'  — or switch back with --engine say")
+    else:
+        print("  ·  tts engine: say (neural alternative: --engine kokoro)")
 
     from .hotkey import pretty as pretty_key
     verb = "hold" if cfg.hotkey_mode == "hold" else "tap"

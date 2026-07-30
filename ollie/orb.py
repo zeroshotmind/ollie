@@ -224,6 +224,11 @@ class OrbView(NSView):
             item = self._add(menu, label, f"setStyle{style.capitalize()}:")
             item.setState_(1 if style == current else 0)
         cfg = getattr(self.controller, "cfg", None)
+        engine = getattr(cfg, "tts_engine", "say")
+        self._submenu(menu, "Engine", [
+            ("macOS say — instant, robotic", "say", engine == "say"),
+            ("Kokoro — neural, natural", "kokoro", engine == "kokoro"),
+        ], "pickEngine:")
         self._submenu(menu, "Voice", self._voice_items(cfg), "pickVoice:")
         self._submenu(menu, "Tone", self._tone_items(cfg), "pickTone:")
 
@@ -256,6 +261,11 @@ class OrbView(NSView):
 
     @objc.python_method
     def _voice_items(self, cfg):
+        if getattr(cfg, "tts_engine", "say") == "kokoro":
+            from .tts import KOKORO_VOICES
+
+            current = getattr(cfg, "kokoro_voice", "")
+            return [(v, v, v == current) for v in KOKORO_VOICES]
         from .tts import list_voices
 
         current = getattr(cfg, "voice", "")
@@ -289,6 +299,10 @@ class OrbView(NSView):
             sub.addItem_(item)
         parent.setSubmenu_(sub)
         menu.addItem_(parent)
+
+    def pickEngine_(self, sender):
+        if self.controller is not None:
+            self.controller.set_engine(sender.representedObject())
 
     def pickVoice_(self, sender):
         if self.controller is not None:

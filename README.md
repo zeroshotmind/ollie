@@ -191,6 +191,20 @@ turn is skipped and retried — nothing is ever injected on a failure path.
 
 ## Voice and tone
 
+**Engine** is what synthesises. Two options, switchable live from the orb's
+**Engine** menu or `--engine`:
+
+| Engine | Sound | Cost |
+|---|---|---|
+| `say` (default) | classic macOS voices | zero setup, instant |
+| `kokoro` | neural (Kokoro-82M via MLX), noticeably more natural | `uv pip install mlx-audio 'misaki[en]'`, one-time ~330 MB model download, ~2s warmup at launch |
+
+Warm Kokoro synthesis runs ~50× real time on Apple Silicon — about 0.15s for
+six seconds of speech — so it adds nothing perceptible to the narration cycle,
+and it falls back to `say` per-utterance if anything goes wrong. Kokoro voices
+(`af_heart`, `am_adam`, `bf_emma`, …) appear in the Voice menu when the engine
+is active; `kokoro_speed` in the config trades pace for clarity.
+
 **Voice** is who speaks: any installed macOS voice. `./run.sh --list-voices`
 shows what you have (System Settings → Accessibility → Spoken Content →
 Manage Voices to download nicer ones — the Siri and Enhanced voices work).
