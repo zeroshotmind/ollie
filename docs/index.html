@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ollie — voice narrator for coding agents</title>
+<meta name="description" content="Talk to your coding agent, hear what it's doing. A floating orb, local models, nothing leaves your Mac.">
+<style>
+  :root { --bg:#0d1117; --panel:#161b27; --line:#232a36; --text:#e6e8ee;
+          --dim:#8b93a7; --accent:#8f7ae5; --green:#3ddc84; }
+  * { box-sizing: border-box; }
+  body { background:var(--bg); color:var(--text); margin:0;
+         font: 16px/1.6 -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 48px 24px 80px; }
+  header { text-align:center; padding: 40px 0 8px; }
+  h1 { font-size: 46px; margin: 0 0 6px; }
+  h1 .orb { filter: drop-shadow(0 0 18px rgba(143,122,229,.8)); }
+  .tag { color:var(--dim); font-size: 19px; margin: 0 auto 26px; max-width: 560px; }
+  .buttons { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-bottom:14px; }
+  .btn { display:inline-block; padding: 12px 22px; border-radius: 10px; text-decoration:none;
+         font-weight:600; }
+  .btn.primary { background:var(--accent); color:#0d1117; }
+  .btn.ghost { border:1px solid var(--line); color:var(--text); }
+  .fine { color:var(--dim); font-size: 13px; text-align:center; }
+  .shot { display:block; margin: 36px auto 8px; max-width:100%; border-radius:14px; }
+  .caption { text-align:center; color:var(--dim); font-size:13px; margin-bottom: 30px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing:.08em; color:var(--dim);
+       border-bottom:1px solid var(--line); padding-bottom:8px; margin-top: 46px; }
+  pre { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+        padding: 14px 18px; overflow-x:auto; font-size: 14px; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .card b { display:block; margin-bottom:4px; }
+  .card p { margin:0; color:var(--dim); font-size:14px; }
+  table { border-collapse: collapse; width:100%; font-size: 14.5px; }
+  td, th { text-align:left; padding: 8px 12px 8px 0; vertical-align:top;
+           border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight:600; }
+  .g { color: var(--green); }
+  a { color: #a795f2; }
+  footer { margin-top: 60px; color:var(--dim); font-size:13px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1><span class="orb">🔮</span> Ollie</h1>
+  <p class="tag">Talk to your coding agent. Hear what it's doing.
+     Lean back — a floating orb keeps watch over Claude Code so you don't have to.</p>
+  <div class="buttons">
+    <a class="btn primary" href="https://github.com/zeroshotmind/ollie/releases/latest/download/Ollie-Installer.dmg">Download the installer</a>
+    <a class="btn ghost" href="https://github.com/zeroshotmind/ollie">Source on GitHub</a>
+  </div>
+  <p class="fine">Apple Silicon Macs · everything runs locally · MIT-spirited weekend software</p>
+</header>
+
+<img class="shot" src="orb-states.png" alt="The Ollie orb in its four states: idle, listening, thinking, speaking" width="720">
+<p class="caption">idle · listening · thinking · speaking — the orb is the whole interface</p>
+
+<h2>Install</h2>
+<p>One line, in a terminal:</p>
+<pre><code>bash &lt;(curl -fsSL https://zeroshotmind.github.io/ollie/install.sh)</code></pre>
+<p class="fine" style="text-align:left">Or download the DMG above and right-click → Open “Install Ollie.command”.
+Either way the installer builds Ollie <em>on your Mac</em> — that's what lets macOS grant
+permissions to Ollie by name instead of blocking an unnotarized download.
+It fetches the source, sets up an isolated Python env with
+<a href="https://docs.astral.sh/uv">uv</a>, and compiles the app bundle.
+You'll want <a href="https://ollama.com">Ollama</a> with <code>qwen2.5:3b-instruct</code>
+pulled — the installer walks you through it.</p>
+
+<h2>What it does</h2>
+<div class="grid">
+  <div class="card"><b>🗣 Push-to-talk input</b><p>Hold right&nbsp;Option, speak, release — Whisper (MLX) types your words at the cursor of your terminal.</p></div>
+  <div class="card"><b>🔊 Narrated output</b><p>A local LLM decides what's genuinely new and worth saying, and says it — brief, loss-less, or verbatim, in four tones.</p></div>
+  <div class="card"><b>🤖 Autopilot</b><p>Give it a goal and it keeps prompting your agent until the goal is done — fenced by turn caps, focus checks and stall detection.</p></div>
+  <div class="card"><b>🎙 Two voices</b><p>Instant macOS <code>say</code>, or the Kokoro neural voice running ~50× real-time on the Neural Engine.</p></div>
+  <div class="card"><b>🔒 Local by construction</b><p>Whisper, Qwen and Kokoro all run on-device. The built-in settings report shows every model and API — no cloud anywhere.</p></div>
+  <div class="card"><b>🫧 Stays out of the way</b><p>No dock icon, no menu bar. A draggable orb that never steals focus; right-click it for everything.</p></div>
+</div>
+
+<h2>After installing: three toggles</h2>
+<p>macOS guards each capability behind a permission, and each fails silently —
+so this is the one manual step. System Settings → Privacy &amp; Security:</p>
+<table>
+  <tr><th>Permission</th><th>Why Ollie needs it</th></tr>
+  <tr><td class="g">Input Monitoring</td><td>hear the push-to-talk key</td></tr>
+  <tr><td class="g">Accessibility</td><td>type your transcribed speech into the terminal</td></tr>
+  <tr><td class="g">Microphone</td><td>record while the key is held</td></tr>
+</table>
+<p class="fine" style="text-align:left">Ollie requests all three at first launch and appears in each list by itself —
+flip the toggles, then quit and reopen it once. <code>~/.ollie/src/run.sh --doctor</code> verifies everything.</p>
+
+<footer>
+  Phase 1 speaks Claude&nbsp;Code · Codex CLI and generic terminals are on the
+  <a href="https://github.com/zeroshotmind/ollie#roadmap">roadmap</a> ·
+  built with <a href="https://github.com/ml-explore/mlx">MLX</a>, <a href="https://ollama.com">Ollama</a>, Whisper and Kokoro
+</footer>
+</div>
+</body>
+</html>

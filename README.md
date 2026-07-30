@@ -39,23 +39,54 @@ escapes, no redraw/spinner noise, and clean role information for free.
 Latency is roughly 2–4 seconds end to end. Stages run sequentially on purpose;
 optimise only if it starts to bother you.
 
-## Setup
+## Install
 
-Requires macOS on Apple Silicon, Python 3.10+, and [Ollama](https://ollama.com).
+Requirements: an Apple Silicon Mac, Python 3.10+, [uv](https://docs.astral.sh/uv)
+(`brew install uv`), and [Ollama](https://ollama.com) (`brew install ollama`)
+running with the filter model pulled.
 
 ```bash
+git clone <this repo> ollie && cd ollie      # or wherever you keep it
+
 ollama pull qwen2.5:3b-instruct
 
-cd ~/workplace/projects/ollie
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python \
-    mlx-whisper sounddevice numpy pynput httpx \
-    'pyobjc-framework-Cocoa>=10.3' 'pyobjc-framework-Quartz>=10.3'
+uv pip install --python .venv/bin/python -e .              # core
+uv pip install --python .venv/bin/python -e '.[kokoro]'    # + neural TTS (optional)
 
+.venv/bin/python scripts/make_app.py --run                 # build + launch Ollie.app
+```
+
+The Whisper model (~290 MB) and, if you use it, the Kokoro model (~330 MB)
+download themselves from Hugging Face on first run.
+
+### Grant the three permissions
+
+Ollie needs all three, and each fails *silently* without them — this is the
+step people miss. System Settings → Privacy & Security:
+
+| Permission | Why | Symptom when missing |
+|---|---|---|
+| **Input Monitoring** | hear the push-to-talk key | holding the key does nothing |
+| **Accessibility** | paste transcribed text into your terminal | speech transcribes but nothing appears |
+| **Microphone** | record while the key is held | recordings are pure silence |
+
+Ollie requests all three on first launch, so it appears in each list on its
+own — just flip the toggles (don't use the + button). Then **quit Ollie
+(right-click the orb) and relaunch once**: the key listener only picks up
+grants at startup.
+
+Verify everything at once:
+
+```bash
 ./run.sh --doctor
 ```
 
-`--doctor` checks every dependency and permission and tells you what is missing.
+One nuance: permissions belong to a *process*, so `--doctor` from a terminal
+reports your terminal's grants; the app's own view is in the orb menu →
+Settings & dependencies. If a grant ever stops working after a rebuild, remove
+the stale row in System Settings and relaunch — and if the row itself refuses
+to update, `tccutil reset Accessibility com.swastikroy.ollie` clears it.
 
 ## Run it as an app (recommended)
 
@@ -197,7 +228,7 @@ turn is skipped and retried — nothing is ever injected on a failure path.
 | Engine | Sound | Cost |
 |---|---|---|
 | `say` (default) | classic macOS voices | zero setup, instant |
-| `kokoro` | neural (Kokoro-82M via MLX), noticeably more natural | `uv pip install mlx-audio 'misaki[en]'`, one-time ~330 MB model download, ~2s warmup at launch |
+| `kokoro` | neural (Kokoro-82M via MLX), noticeably more natural | install with `-e '.[kokoro]'`, one-time ~330 MB model download, ~2s warmup at launch |
 
 Warm Kokoro synthesis runs ~50× real time on Apple Silicon — about 0.15s for
 six seconds of speech — so it adds nothing perceptible to the narration cycle,
@@ -242,7 +273,7 @@ environment.
 | Better transcription | `OLLIE_WHISPER_REPO=mlx-community/whisper-small.en-mlx` |
 
 Hotkeys can be named the way they are printed on your keyboard — `"right
-option"`, `"option"`, `"right command"`, `"caps lock"`, `f13` — or by pynput's
+option"`, `"option"`, `"right command"`, `"caps lock"`, `f13` — or by the
 internal names (`alt_r`, `cmd_r`) if you prefer.
 
 Useful knobs that have no flag: `batch_debounce` (how long events are gathered
@@ -291,7 +322,7 @@ on this Mac; no cloud API appears anywhere in it.
 ## Tests
 
 ```bash
-uv pip install --python .venv/bin/python pytest
+uv pip install --python .venv/bin/python -e '.[dev]'
 .venv/bin/python -m pytest tests -q
 ```
 
@@ -326,4 +357,3 @@ scripts/
   terminal's AX text tree ~2×/s and diff snapshots through the local model
   (not a character diff) to suppress redraws, spinners and progress bars.
   Fallback path only.
-- Kokoro TTS in place of `say`.
