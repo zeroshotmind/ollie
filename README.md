@@ -1,0 +1,250 @@
+# 🔮 Ollie
+
+A voice companion for terminal coding agents. Talk to inject text at your
+cursor; hear new, meaningful agent output read back. A floating orb shows what
+it is doing so you can lean back and stop watching the terminal.
+
+Not an autonomous agent — a speech-in / narration-out bridge.
+
+**Phase 1 (this release): Claude Code on macOS, Apple Silicon.**
+
+![orb states](docs/orb-states.png)
+
+## How it works
+
+```
+                 ┌── ClaudeCodeReader ──┐
+  ~/.claude/*.jsonl  tail + parse        │  {role, text}
+                 └──────────────────────┘
+                            │
+                    Ollama filter/dedup      qwen2.5:3b-instruct
+                    "is this new? say it     holds spoken-history memory,
+                     in one short line"      condenses diffs and logs
+                            │
+                       macOS `say`  ──────►  🔊
+                            │
+                       amplitude ─────────►  🔮 orb
+
+  🎤 hold ⌥R ─► mlx-whisper base.en ─► ⌘V into the focused terminal
+```
+
+The **reader** is the only component that knows where output comes from.
+Everything downstream is source-agnostic — that is the seam Phase 2 (Codex CLI)
+and Phase 3 (generic terminal via the Accessibility API) plug into. See
+`ollie/readers/base.py` for the contract.
+
+Tailing the session JSONL rather than scraping the terminal means no ANSI
+escapes, no redraw/spinner noise, and clean role information for free.
+
+Latency is roughly 2–4 seconds end to end. Stages run sequentially on purpose;
+optimise only if it starts to bother you.
+
+## Setup
+
+Requires macOS on Apple Silicon, Python 3.10+, and [Ollama](https://ollama.com).
+
+```bash
+ollama pull qwen2.5:3b-instruct
+
+cd ~/workplace/projects/ollie
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python \
+    mlx-whisper sounddevice numpy pynput httpx \
+    'pyobjc-framework-Cocoa>=10.3' 'pyobjc-framework-Quartz>=10.3'
+
+./run.sh --doctor
+```
+
+`--doctor` checks every dependency and permission and tells you what is missing.
+
+## Run it as an app (recommended)
+
+```bash
+.venv/bin/python scripts/make_app.py --run
+```
+
+This builds `/Applications/Ollie.app` and launches it — the standard
+location, so it appears in the Privacy & Security permission pickers.
+
+macOS grants Accessibility and Microphone to an **application**, not to a
+script. Run `python -m ollie` from a shell and the grant lands on your terminal
+— so every script that terminal ever runs inherits the ability to read your
+keystrokes and drive your machine. Inside the bundle the grant belongs to Ollie
+alone, and the permission dialogs say "Ollie".
+
+Getting that right takes more than a folder with an `Info.plist`. The obvious
+wrapper — a shell script that `exec`s the interpreter — does **not** work:
+`exec` replaces the process image, so macOS attributes the permission to the
+Python binary and Accessibility lists a bare "python 3.12". So Ollie's
+`Contents/MacOS/Ollie` is a small C program that links libpython and calls
+`Py_BytesMain` directly. The process image never changes, the running process
+really is the bundle, and TCC sees Ollie. `scripts/launcher/main.c` is about
+sixty lines and `make_app.py` compiles it with clang.
+
+On first launch macOS asks for Microphone, then Accessibility. **Grant
+Accessibility, then quit and relaunch Ollie once** — the key listener only
+picks up the new permission at startup. If Accessibility still lists a stale
+`python 3.12` entry from an earlier attempt, remove it.
+
+The bundle stays a thin wrapper (~1.4 MB): it points at this project's
+virtualenv, so edits to the Python take effect on the next launch with no
+rebuild — and, importantly, without disturbing the permission.
+
+**Rebuilding revokes the grant.** macOS keys Accessibility to the bundle's code
+signature, and re-signing produces a new seal even when nothing changed. So
+`make_app.py` compares a manifest of its inputs (launcher source, `orb.py`,
+paths, `Info.plist`) and does nothing at all when they match. You only re-grant
+when the app genuinely changed: a new launcher, a new icon, or a moved project.
+Byte-comparing the built binary would not work — the linker stamps a fresh
+LC_UUID on every build, so no two builds are ever identical.
+
+No Dock icon, no menu bar. **Right-click the orb** to mute, open the log, jump
+to Accessibility settings, or quit. The full log is `~/.ollie/ollie.log`;
+`~/.ollie/app.log` catches raw stdout and stderr, including crashes.
+
+```bash
+python scripts/make_app.py --dest /Applications   # somewhere else
+```
+
+## Run from a terminal
+
+Handy while developing, since you see the logs live:
+
+```bash
+./run.sh                 # narrator + floating orb
+./run.sh --no-orb        # headless, logs to stderr and ~/.ollie/ollie.log
+./run.sh --list-sessions # which transcripts it can see; * is the active one
+./run.sh --say "hello"   # TTS smoke test
+```
+
+This needs your *terminal* to hold the Accessibility grant.
+
+Ollie attaches to your most recently active Claude Code session and joins it at
+the tail, so it never replays history at you. Start a new session in any
+directory and it follows automatically.
+
+**Speak:** hold the **right Option (⌥)** key, talk, release. Your words are
+transcribed and pasted at the cursor of whatever terminal is focused. Nothing
+is submitted until you press Return yourself — pass `--press-enter` if you want
+it sent immediately. Talking also interrupts whatever Ollie is currently
+saying.
+
+**Orb:** drag it anywhere. Clicks outside the circle pass through to the window
+underneath, so it never gets in your way. Right-click to quit.
+
+### Pin the session with a hook (optional)
+
+Instead of guessing the newest transcript, let Claude Code tell Ollie which
+session started:
+
+```bash
+.venv/bin/python scripts/install_hook.py     # --uninstall to undo
+```
+
+This registers a `SessionStart` hook that records the session id and transcript
+path in `~/.ollie/current_session.json`. Your existing `~/.claude/settings.json`
+is backed up first.
+
+## Narration styles
+
+| Style | What you hear | Model in the loop |
+|---|---|---|
+| `brief` (default) | One terse line; routine steps skipped | yes |
+| `full` | Loss-less retelling — every action, file, number and question kept, several sentences allowed | yes |
+| `verbatim` | The agent's own words, lightly cleaned for speech (markdown stripped, code fences elided); URLs and paths are read as written | no |
+
+Switch with `--style full`, by right-clicking the orb, or by setting `style`
+in `~/.ollie/config.json`. Changes made from the orb menu persist.
+
+## Tuning
+
+Flags override `~/.ollie/config.json`, which overrides the defaults in
+`ollie/config.py`. Every field also reads from `OLLIE_<FIELD>` in the
+environment.
+
+| What | How |
+|---|---|
+| Quieter narration | `--no-tools` (prose only) |
+| Noisier narration | `--tool-results` (also reads command output) |
+| Different voice | `--voice Daniel --rate 190` (`say -v '?'` to list) |
+| Different filter model | `--model llama3.2:3b` |
+| Different hotkey | `--hotkey "caps lock"`, `--hotkey f13`, `--hotkey-mode toggle` |
+| Find a working key | `./run.sh --test-hotkey` prints every key you press |
+| Type instead of paste | `OLLIE_INJECT_MODE=type` |
+| Better transcription | `OLLIE_WHISPER_REPO=mlx-community/whisper-small.en-mlx` |
+
+Hotkeys can be named the way they are printed on your keyboard — `"right
+option"`, `"option"`, `"right command"`, `"caps lock"`, `f13` — or by pynput's
+internal names (`alt_r`, `cmd_r`) if you prefer.
+
+Useful knobs that have no flag: `batch_debounce` (how long events are gathered
+before one narration pass — raise it for fewer, denser sentences),
+`history_window` (how many spoken lines the filter remembers), `max_words`.
+
+## Design notes
+
+**Why the raw shell command never reaches the model.** A 3B model handed
+`cd /repo && KMP_DUPLICATE_LIB_OK=TRUE .venv/bin/python -c "import torch..."`
+will simply read it back to you. `summarize_command()` in the reader turns it
+into `running a python snippet` first. The filter is also given few-shot
+examples, and any output that is just a tool event echoed back is dropped
+(`OllamaFilter._is_echo`).
+
+**Degradation.** If Ollama is down the filter falls back to a deterministic
+local condense rather than going silent. If `say` cannot synthesise to a file
+it falls back to speaking directly, losing only the amplitude animation. If
+clang is missing, `make_app.py` falls back to a shell launcher and says so —
+the app still runs, it just loses its own permission identity.
+
+**Logging goes to a duplicated file descriptor.** PortAudio's CoreAudio backend
+points fd 2 at `/dev/null` while it initialises, to hide its own chatter, and
+restores it afterwards. Anything logged in that window vanishes — which quietly
+ate the startup lines until `_setup_logging` started handing the console
+handler its own `os.dup` of stderr.
+
+**The reader never replays.** It tracks inode, size and the first 256 bytes of
+the transcript, so a rotated, truncated or rewritten file is detected and
+reread instead of producing garbage from a stale offset. Chunks are deduped by
+tool-use id and message uuid, so the same line is never spoken twice.
+
+Thinking blocks and subagent sidechains are never spoken.
+
+## Tests
+
+```bash
+uv pip install --python .venv/bin/python pytest
+.venv/bin/python -m pytest tests -q
+```
+
+`scripts/render_orb.py` renders the four orb states to a PNG contact sheet
+offscreen — handy for tweaking the visuals without launching the app.
+
+## Layout
+
+```
+ollie/
+  readers/base.py         the Reader contract — the swap point
+  readers/claude_code.py  tail + parse the Claude Code session JSONL
+  filter.py               Ollama dedup/condense, spoken-history memory
+  tts.py                  `say` -> WAV -> playback with amplitude
+  stt.py                  mlx-whisper, push-to-talk capture
+  injector.py             pasteboard + synthesised ⌘V (or unicode typing)
+  hotkey.py               global push-to-talk listener
+  orb.py                  always-on-top transparent Cocoa window
+  core.py                 the shared source-agnostic core loop
+scripts/
+  make_app.py             build Ollie.app (bundle, icon, ad-hoc signature)
+  launcher/main.c         the native launcher that gives the app its own TCC identity
+  install_hook.py         register the Claude Code SessionStart hook
+  session_hook.py         the hook itself
+  render_orb.py           offscreen orb preview
+```
+
+## Roadmap
+
+- **Phase 2** — Codex CLI reader.
+- **Phase 3** — generic terminals via the macOS Accessibility API: poll the
+  terminal's AX text tree ~2×/s and diff snapshots through the local model
+  (not a character diff) to suppress redraws, spinners and progress bars.
+  Fallback path only.
+- Kokoro TTS in place of `say`.
