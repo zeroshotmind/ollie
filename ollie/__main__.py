@@ -103,6 +103,8 @@ def _parse_args(argv):
                    help="submit immediately after injecting speech")
     p.add_argument("-v", "--verbose", action="store_true", default=None)
     p.add_argument("--doctor", action="store_true", help="run preflight checks and exit")
+    p.add_argument("--settings", action="store_true",
+                   help="show what Ollie depends on (models, APIs, permissions) and exit")
     p.add_argument("--list-sessions", action="store_true", help="list transcripts and exit")
     p.add_argument("--say", help="speak a phrase and exit (TTS smoke test)")
     p.add_argument("--test-hotkey", action="store_true",
@@ -274,7 +276,7 @@ def main(argv=None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     overrides = {k: v for k, v in vars(args).items()
                  if k not in ("doctor", "list_sessions", "say", "test_hotkey",
-                              "list_voices")
+                              "list_voices", "settings")
                  and v is not None}
     cfg = Config.load(overrides)
     _setup_logging(cfg.verbose)
@@ -299,6 +301,11 @@ def main(argv=None) -> int:
 
     if args.doctor:
         return _doctor(cfg)
+
+    if args.settings:
+        from .settings_report import gather, render_text
+        print(render_text(gather(cfg)))
+        return 0
 
     if args.test_hotkey:
         return _test_hotkey(cfg)

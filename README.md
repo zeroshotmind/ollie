@@ -277,6 +277,17 @@ tool-use id and message uuid, so the same line is never spoken twice.
 
 Thinking blocks and subagent sidechains are never spoken.
 
+## Settings & dependency report
+
+`./run.sh --settings` prints, and orb menu → **Settings & dependencies…**
+opens as a page, a live inventory of everything Ollie stands on: which models
+are in use and their on-disk size (Whisper, the Ollama filter/autopilot
+models, Kokoro), which macOS APIs are involved and whether each permission is
+currently granted for that process, where the transcripts, config and logs
+live, and the versions of every library in the stack. All of it is gathered
+at render time — it is a health check, not a brochure. Everything listed runs
+on this Mac; no cloud API appears anywhere in it.
+
 ## Tests
 
 ```bash

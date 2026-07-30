@@ -233,6 +233,7 @@ class OrbView(NSView):
         self._submenu(menu, "Tone", self._tone_items(cfg), "pickTone:")
 
         menu.addItem_(NSMenuItem.separatorItem())
+        self._add(menu, "Settings & dependencies…", "openReport:")
         self._add(menu, "Accessibility settings…", "openAccess:")
         self._add(menu, "Input Monitoring settings…", "openInput:")
         self._add(menu, "Microphone settings…", "openMic:")
@@ -325,6 +326,15 @@ class OrbView(NSView):
 
     def setStyleVerbatim_(self, sender):
         self._set_style("verbatim")
+
+    def openReport_(self, sender):
+        import threading
+
+        from .config import Config
+        from .settings_report import open_report
+
+        cfg = getattr(self.controller, "cfg", None) or Config.load({})
+        threading.Thread(target=open_report, args=(cfg,), daemon=True).start()
 
     def openAccess_(self, sender):
         from .permissions import open_settings
