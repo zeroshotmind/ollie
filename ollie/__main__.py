@@ -109,6 +109,8 @@ def _parse_args(argv):
     p.add_argument("--settings", action="store_true",
                    help="show what Ollie depends on (models, APIs, permissions) and exit")
     p.add_argument("--list-sessions", action="store_true", help="list transcripts and exit")
+    p.add_argument("--history", nargs="?", const=50, type=int, metavar="N",
+                   help="show the last N trajectory events (default 50) and exit")
     p.add_argument("--say", help="speak a phrase and exit (TTS smoke test)")
     p.add_argument("--test-hotkey", action="store_true",
                    help="print every key you press, to find a working push-to-talk key")
@@ -279,7 +281,7 @@ def main(argv=None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     overrides = {k: v for k, v in vars(args).items()
                  if k not in ("doctor", "list_sessions", "say", "test_hotkey",
-                              "list_voices", "settings")
+                              "list_voices", "settings", "history")
                  and v is not None}
     cfg = Config.load(overrides)
     _setup_logging(cfg.verbose)
@@ -300,6 +302,11 @@ def main(argv=None) -> int:
             age = time.time() - mtime
             print(f"{marker} {time.strftime('%Y-%m-%d %H:%M', time.localtime(mtime))} "
                   f"({age/60:6.1f}m ago)  {path}")
+        return 0
+
+    if args.history is not None:
+        from .history import render, tail
+        print(render(tail(args.history)))
         return 0
 
     if args.doctor:
