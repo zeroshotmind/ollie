@@ -6,7 +6,7 @@ it is doing so you can lean back and stop watching the terminal.
 
 Not an autonomous agent — a speech-in / narration-out bridge.
 
-**Phase 1 (this release): Claude Code on macOS, Apple Silicon.**
+Currently speaks Claude Code on macOS, Apple Silicon.
 
 ![orb states](docs/orb-states.png)
 
@@ -29,9 +29,8 @@ Not an autonomous agent — a speech-in / narration-out bridge.
 ```
 
 The **reader** is the only component that knows where output comes from.
-Everything downstream is source-agnostic — that is the seam Phase 2 (Codex CLI)
-and Phase 3 (generic terminal via the Accessibility API) plug into. See
-`ollie/readers/base.py` for the contract.
+Everything downstream is source-agnostic. See `ollie/readers/base.py` for the
+contract.
 
 Tailing the session JSONL rather than scraping the terminal means no ANSI
 escapes, no redraw/spinner noise, and clean role information for free.
@@ -349,11 +348,3 @@ scripts/
   session_hook.py         the hook itself
   render_orb.py           offscreen orb preview
 ```
-
-## Roadmap
-
-- **Phase 2** — Codex CLI reader.
-- **Phase 3** — generic terminals via the macOS Accessibility API: poll the
-  terminal's AX text tree ~2×/s and diff snapshots through the local model
-  (not a character diff) to suppress redraws, spinners and progress bars.
-  Fallback path only.
