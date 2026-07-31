@@ -14,6 +14,7 @@ import time
 from .config import Config
 from .autopilot import Autopilot
 from .filter import OllamaFilter
+from .grounding import Grounder
 from .history import History
 from .hotkey import PushToTalk, TapKey
 from .injector import Injector
@@ -53,6 +54,7 @@ class Narrator:
         self.tts = make_tts(cfg, self.state)
         self.stt = WhisperSTT(cfg, self.state)
         self.injector = Injector(cfg)
+        self.grounder = Grounder(cfg)
         self.history = History(cfg)
         self.ptt = PushToTalk(cfg, self._on_talk_start, self._on_talk_stop)
         self.window_key = TapKey(cfg.window_hotkey, self._on_window_key)
@@ -62,6 +64,8 @@ class Narrator:
             speak=self._speak_aside,
             frontmost=_frontmost_app,
         )
+        self.autopilot.status = self._autopilot_status
+        self.autopilot.window_shot = self._window_screenshot
         self.queue: queue.Queue[Chunk] = queue.Queue()
         self.muted = False
         self._threads: list[threading.Thread] = []
@@ -91,6 +95,7 @@ class Narrator:
         self.reader.stop()
         self.filter.close()
         self.autopilot.close()
+        self.grounder.close()
 
     def _spawn(self, target, name: str) -> None:
         thread = threading.Thread(target=target, name=name, daemon=True)
@@ -251,6 +256,45 @@ class Narrator:
                                 target=_frontmost_app())
         return ok
 
+    def _autopilot_status(self, text: str) -> None:
+        """Autopilot narrating its own decision process — shown in the caption
+        bubble (labelled thinking state), never spoken, never queued."""
+        if text:
+            self.state.set(State.THINKING, text)
+        elif self.state.state is State.THINKING:
+            self.state.set(State.IDLE)
+
+    def _window_screenshot(self):
+        """Current screenshot of the pinned window (None off window mode) —
+        autopilot's eyes when deciding its next computer-use action."""
+        reader = self.reader
+        if getattr(reader, "name", "") != "window":
+            return None
+        frame = reader.frame_on_screen()
+        if frame is None:
+            return None
+        return self.grounder.screenshot(reader.pid, frame)
+
+    def _autopilot_click(self, description: str) -> bool:
+        """Ground a described element in the pinned window and click it."""
+        reader = self.reader
+        if getattr(reader, "name", "") != "window":
+            return False
+        frame = reader.frame_on_screen()
+        if frame is None:
+            return False
+        point = self.grounder.locate(description, reader.pid, frame)
+        if point is None:
+            self._speak_aside(f"I couldn't find {description}.")
+            return False
+        ok = self.injector.click(*point)
+        if ok:
+            self._speak_aside(f"Clicking {description}.")
+            self.history.record("autopilot", f"clicked {description}",
+                                source=_context_key(reader),
+                                target=self.autopilot.extra_app)
+        return ok
+
     def _speak_aside(self, text: str) -> None:
         """Status lines (source switches, autopilot) — spoken and captioned,
         never queued. Muted: caption only; captions off too: dropped."""
@@ -313,6 +357,10 @@ class Narrator:
         # and focuses that window first so the text lands in the right place
         self.autopilot.extra_app = label.split(" — ")[0].strip()
         self.autopilot.prepare = reader.focus
+        # window mode can also click: the grounding model finds the target
+        self.autopilot.click = (
+            self._autopilot_click
+            if self.cfg.computer_use and self.cfg.grounding_model else None)
         self._speak_aside(f"Now narrating {label}.")
 
     def narrate_transcript(self) -> None:
@@ -322,6 +370,7 @@ class Narrator:
         self._swap_reader(ClaudeCodeReader(self.cfg))
         self.autopilot.extra_app = ""
         self.autopilot.prepare = None
+        self.autopilot.click = None
         self._speak_aside("Back to the Claude Code session.")
 
     def _on_window_key(self) -> None:
@@ -424,6 +473,14 @@ class Narrator:
         log.info("autopilot model: %s", model)
         self._speak_aside(f"Autopilot now driven by {model.split(':')[0]}.")
 
+    def set_grounding_model(self, model: str) -> None:
+        if not model or model == self.cfg.grounding_model:
+            return
+        self.cfg.grounding_model = model
+        self._persist()
+        log.info("grounding model: %s", model)
+        self._speak_aside(f"Clicks now grounded by {model.split(':')[0]}.")
+
     def set_tone(self, tone: str) -> None:
         from .filter import TONES
 
@@ -438,6 +495,20 @@ class Narrator:
             self.cfg.save()
         except Exception:
             log.debug("could not persist config change", exc_info=True)
+
+    def toggle_computer_use(self) -> bool:
+        self.cfg.computer_use = not self.cfg.computer_use
+        self._persist()
+        # apply immediately if a window is pinned right now
+        on_window = getattr(self.reader, "name", "") == "window"
+        self.autopilot.click = (
+            self._autopilot_click
+            if self.cfg.computer_use and self.cfg.grounding_model and on_window
+            else None)
+        log.info("computer use %s", "on" if self.cfg.computer_use else "off")
+        self._speak_aside("Computer use on. I can click in pinned windows."
+                          if self.cfg.computer_use else "Computer use off.")
+        return self.cfg.computer_use
 
     def toggle_captions(self) -> bool:
         self.cfg.captions = not self.cfg.captions

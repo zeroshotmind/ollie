@@ -93,6 +93,17 @@ class Config:
     autopilot_model: str = ""        # empty = same model as the filter
     autopilot_frontmost: str = ("Terminal,iTerm,WezTerm,kitty,Alacritty,"
                                 "Ghostty,Warp,Visual Studio Code,Code,Cursor,Windsurf")
+    # vision model that turns "the Send button" into coordinates so autopilot
+    # can click things in a pinned window; empty disables clicking
+    grounding_model: str = "ui-venus-8b"
+    computer_use: bool = True       # let autopilot click, not just type
+    # vision model that *decides* the next action in computer-use mode from a
+    # screenshot of the window (the grounding model only finds coordinates);
+    # empty = decide from screen text alone with the autopilot model
+    # the -instruct tag matters: the default qwen3-vl tag is the thinking
+    # build, which ignores "think": false and returns empty answers when
+    # reasoning exhausts the token budget
+    autopilot_vision_model: str = "qwen3-vl:30b-a3b-instruct"
 
     # ---------- injection ----------
     inject_mode: str = "paste"      # paste | type

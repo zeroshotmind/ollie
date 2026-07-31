@@ -298,3 +298,45 @@ def test_autopilot_respects_frontmost_gate():
     assert not pilot._is_terminal("Safari")
     assert pilot._is_terminal("Terminal")
     pilot.close()
+
+
+def test_autopilot_click_parsing():
+    from ollie.autopilot import parse_reply
+
+    assert parse_reply("CLICK: the blue Send button") == ("click", "the blue Send button")
+    assert parse_reply("  click:  the Settings tab ") == ("click", "the Settings tab")
+    assert parse_reply("CLICK:")[0] == "invalid"
+
+
+def test_grounding_point_parsing():
+    from ollie.grounding import parse_point
+
+    # plain point, image too small for the 0-1000 heuristic to fire
+    assert parse_point("(120, 40)", 800, 600) == (120, 40)
+    # 0-1000 normalised on a wide image gets scaled
+    assert parse_point("(500, 500)", 2000, 1000) == (1000, 500)
+    # a box collapses to its centre (0-1000 normalised here as well)
+    assert parse_point("[100, 100, 300, 200]", 2000, 1000) == (400, 150)
+    # garbage and out-of-range answers are rejected
+    assert parse_point("no idea", 800, 600) is None
+    assert parse_point("(-50, 9000)", 800, 600) is None
+
+
+def test_autopilot_click_turn():
+    from ollie.autopilot import Autopilot
+
+    clicks = []
+    cfg = Config.load({"autopilot_settle": 0.0})
+    pilot = Autopilot(cfg, inject=lambda t: True,
+                      speak=lambda s: None, frontmost=lambda: "WhatsApp")
+    pilot.enabled = True
+    pilot.goal = "g"
+    pilot.click = lambda d: clicks.append(d) or True
+    pilot._do_click("the Send button")
+    assert clicks == ["the Send button"]
+    assert pilot.turns == 1
+    assert pilot.sent == ["CLICK the Send button"]
+    # the same click twice in a row is a stall
+    pilot._do_click("the Send button")
+    assert pilot.enabled is False
+    pilot.close()

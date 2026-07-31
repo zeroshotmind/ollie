@@ -90,6 +90,32 @@ class Injector:
             return False
 
     # ------------------------------------------------------------------
+    def click(self, x: float, y: float) -> bool:
+        """Left-click at global screen coordinates (top-left origin)."""
+        try:
+            from Quartz import (
+                CGEventCreateMouseEvent,
+                CGEventPost,
+                CGEventSetFlags,
+                kCGEventLeftMouseDown,
+                kCGEventLeftMouseUp,
+                kCGEventMouseMoved,
+                kCGHIDEventTap,
+                kCGMouseButtonLeft,
+            )
+
+            point = (float(x), float(y))
+            for kind in (kCGEventMouseMoved, kCGEventLeftMouseDown, kCGEventLeftMouseUp):
+                event = CGEventCreateMouseEvent(None, kind, point, kCGMouseButtonLeft)
+                CGEventSetFlags(event, 0)     # same inherited-modifier trap as _tap
+                CGEventPost(kCGHIDEventTap, event)
+                time.sleep(0.04)
+            return True
+        except Exception as exc:
+            log.error("click failed: %s", exc)
+            return False
+
+    # ------------------------------------------------------------------
     def _paste(self, text: str) -> None:
         from AppKit import NSPasteboard, NSPasteboardTypeString
         from Quartz import kCGEventFlagMaskCommand

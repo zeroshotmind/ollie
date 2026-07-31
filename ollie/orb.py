@@ -73,7 +73,47 @@ class OrbView(NSView):
         self.controller = controller
         self.level = 0.0
         self.born = time.time()
+        self.hover = False          # pointer over the orb window
+        self.hover_level = 0.0      # smoothed, drives the toggle fade
+        self.tip_key = None         # toggle under the pointer, for the tooltip
         return self
+
+    def updateTrackingAreas(self):
+        from AppKit import (
+            NSTrackingActiveAlways,
+            NSTrackingArea,
+            NSTrackingInVisibleRect,
+            NSTrackingMouseEnteredAndExited,
+            NSTrackingMouseMoved,
+        )
+
+        objc.super(OrbView, self).updateTrackingAreas()
+        for area in list(self.trackingAreas() or []):
+            self.removeTrackingArea_(area)
+        self.addTrackingArea_(NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(
+            self.bounds(),
+            NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved
+            | NSTrackingActiveAlways | NSTrackingInVisibleRect,
+            self, None,
+        ))
+
+    def mouseEntered_(self, event):
+        self.hover = True
+
+    def mouseExited_(self, event):
+        self.hover = False
+        self.tip_key = None
+
+    def mouseMoved_(self, event):
+        # macOS never shows native tooltips over a non-activating panel, so
+        # the hovered button is tracked here and the tip drawn by hand
+        local = self.convertPoint_fromView_(event.locationInWindow(), None)
+        key = None
+        for k, bx, by, r, on in self._buttons():
+            if (local.x - bx) ** 2 + (local.y - by) ** 2 <= (r * 1.25) ** 2:
+                key = k
+                break
+        self.tip_key = key
 
     def initWithFrame_state_(self, frame, state):
         return self.initWithFrame_state_controller_(frame, state, None)
@@ -160,6 +200,11 @@ class OrbView(NSView):
             _color((1.0, 0.62, 0.18), pulse).set()
             ring.stroke()
 
+        target = 1.0 if self.hover else 0.0
+        self.hover_level += (target - self.hover_level) * 0.30
+        if self.hover_level > 0.02:
+            self._draw_toggles(self.hover_level)
+
         if getattr(self.controller, "muted", False):
             slash = NSBezierPath.bezierPath()
             slash.moveToPoint_(NSMakePoint(cx - radius * 0.62, cy - radius * 0.62))
@@ -168,6 +213,156 @@ class OrbView(NSView):
             slash.setLineCapStyle_(1)
             _color((0.05, 0.05, 0.07), 0.75).set()
             slash.stroke()
+
+    @objc.python_method
+    def _buttons(self):
+        """The three hover toggles: (key, x, y, r, on, accent). Laid out in an
+        arc over the orb, inside the window's transparent margin."""
+        bounds = self.bounds()
+        cx = bounds.size.width / 2.0
+        cy = bounds.size.height / 2.0
+        unit = min(cx, cy)
+        # below the orb and hugging it, so the caption bubble (anchored
+        # beside it) doesn't reach them
+        dist, r = unit * 0.70, unit * 0.185
+        pilot = getattr(self.controller, "autopilot", None)
+        cfg = getattr(self.controller, "cfg", None)
+        spec = [
+            ("mute", 210.0, bool(getattr(self.controller, "muted", False))),
+            ("pilot", 270.0, bool(pilot is not None and pilot.enabled)),
+            ("computer", 330.0, bool(getattr(cfg, "computer_use", False))),
+        ]
+        out = []
+        for key, deg, on in spec:
+            a = math.radians(deg)
+            out.append((key, cx + dist * math.cos(a), cy + dist * math.sin(a), r, on))
+        return out
+
+    _SYMBOLS = {
+        # (symbol when on, symbol when off)
+        "mute": ("speaker.slash.fill", "speaker.wave.2.fill"),
+        "pilot": ("steeringwheel", "steeringwheel"),
+        "computer": ("cursorarrow.click.2", "cursorarrow.click.2"),
+    }
+
+    @objc.python_method
+    def _symbol_image(self, name, point_size, bright):
+        """SF Symbol rendered white (or dimmed), cached — imageWithSystemSymbol
+        allocates on every call and this runs at frame rate."""
+        from AppKit import NSColor, NSImage, NSImageSymbolConfiguration
+
+        from AppKit import (
+            NSCompositingOperationSourceIn,
+            NSCompositingOperationSourceOver,
+            NSRectFillUsingOperation,
+            NSZeroRect,
+        )
+
+        cache = getattr(self, "_symbol_cache", None)
+        if cache is None:
+            cache = self._symbol_cache = {}
+        key = (name, round(point_size), bright)
+        if key not in cache:
+            image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(name, None)
+            if image is None:
+                cache[key] = None
+            else:
+                conf = NSImageSymbolConfiguration.configurationWithPointSize_weight_(
+                    point_size, 5)   # semibold
+                image = image.imageWithSymbolConfiguration_(conf)
+                # hard-tint through the glyph's alpha: the symbol-configuration
+                # colour routes don't reliably render in a plain drawRect
+                size = image.size()
+                tinted = NSImage.alloc().initWithSize_(size)
+                tinted.lockFocus()
+                image.drawAtPoint_fromRect_operation_fraction_(
+                    NSMakePoint(0, 0), NSZeroRect,
+                    NSCompositingOperationSourceOver, 1.0)
+                NSColor.colorWithWhite_alpha_(1.0, 1.0).set()
+                NSRectFillUsingOperation(
+                    NSMakeRect(0, 0, size.width, size.height),
+                    NSCompositingOperationSourceIn)
+                tinted.unlockFocus()
+                cache[key] = tinted
+        return cache[key]
+
+    @objc.python_method
+    def _draw_toggles(self, alpha):
+        from AppKit import NSCompositingOperationSourceOver, NSZeroRect
+
+        for key, bx, by, r, on in self._buttons():
+            # solid black disc, hairline rim — bright white icon on black;
+            # state reads from icon brightness and the rim weight
+            _color((0.0, 0.0, 0.0), 0.92 * alpha).set()
+            _circle(bx, by, r).fill()
+            ring = _circle(bx, by, r)
+            ring.setLineWidth_(1.6 if on else 1.0)
+            _color((1.0, 1.0, 1.0), (0.90 if on else 0.28) * alpha).set()
+            ring.stroke()
+            # generous padding: the glyph fills ~55% of the disc
+            image = self._symbol_image(self._SYMBOLS[key][0 if on else 1],
+                                       r * 0.95, on)
+            if image is not None:
+                size = image.size()
+                image.drawInRect_fromRect_operation_fraction_(
+                    NSMakeRect(bx - size.width / 2.0, by - size.height / 2.0,
+                               size.width, size.height),
+                    NSZeroRect, NSCompositingOperationSourceOver, alpha)
+        if self.tip_key is not None and alpha > 0.6:
+            self._draw_tip(self.tip_key)
+
+    _TIP_LABELS = {
+        "mute": ("Unmute voice", "Mute voice"),
+        "pilot": ("Disarm autopilot", "Arm autopilot"),
+        "computer": ("Computer use: on", "Computer use: off"),
+    }
+
+    @objc.python_method
+    def _draw_tip(self, tip_key):
+        """Hand-drawn tooltip: a pill just under the orb naming the hovered
+        toggle (native tooltips never appear over non-activating panels)."""
+        from AppKit import (
+            NSFont,
+            NSFontAttributeName,
+            NSForegroundColorAttributeName,
+        )
+        from Foundation import NSString
+
+        entry = next((b for b in self._buttons() if b[0] == tip_key), None)
+        if entry is None:
+            return
+        on = entry[4]
+        label = self._TIP_LABELS[tip_key][0 if on else 1]
+        bounds = self.bounds()
+        cx = bounds.size.width / 2.0
+        cy = bounds.size.height / 2.0
+        unit = min(cx, cy)
+
+        text = NSString.stringWithString_(label)
+        attrs = {
+            NSFontAttributeName: NSFont.systemFontOfSize_(max(9.0, unit * 0.155)),
+            NSForegroundColorAttributeName: _color((1.0, 1.0, 1.0), 0.95),
+        }
+        size = text.sizeWithAttributes_(attrs)
+        pad_x, pad_y = 7.0, 3.0
+        width = size.width + 2 * pad_x
+        x = min(max(cx - width / 2.0, 2.0), bounds.size.width - width - 2.0)
+        y = cy - unit * 0.47 - size.height / 2.0   # between orb edge and buttons
+        pill = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(x, y - pad_y, width, size.height + 2 * pad_y),
+            (size.height + 2 * pad_y) / 2.0, (size.height + 2 * pad_y) / 2.0)
+        _color((0.0, 0.0, 0.0), 0.90).set()
+        pill.fill()
+        text.drawAtPoint_withAttributes_(NSMakePoint(x + pad_x, y), attrs)
+
+    @objc.python_method
+    def _hit_button(self, local):
+        if self.hover_level < 0.3:
+            return None
+        for key, bx, by, r, on in self._buttons():
+            if (local.x - bx) ** 2 + (local.y - by) ** 2 <= (r * 1.25) ** 2:
+                return key
+        return None
 
     @objc.python_method
     def _draw_sweep(self, cx, cy, radius, elapsed):
@@ -191,9 +386,21 @@ class OrbView(NSView):
         radius = min(cx, cy) * 0.62
         if (local.x - cx) ** 2 + (local.y - cy) ** 2 <= radius * radius:
             return self
+        if self._hit_button(local) is not None:
+            return self
         return None
 
     def mouseDown_(self, event):
+        local = self.convertPoint_fromView_(event.locationInWindow(), None)
+        key = self._hit_button(local)
+        if key is not None and self.controller is not None:
+            import threading
+
+            action = {"mute": "toggle_mute", "pilot": "toggle_autopilot",
+                      "computer": "toggle_computer_use"}[key]
+            threading.Thread(target=getattr(self.controller, action),
+                             daemon=True).start()
+            return
         window = self.window()
         try:
             window.performWindowDragWithEvent_(event)
@@ -208,6 +415,11 @@ class OrbView(NSView):
         captions = bool(getattr(getattr(self.controller, "cfg", None), "captions", True))
         item = self._add(menu, "Captions", "toggleCaptions:")
         item.setState_(1 if captions else 0)
+
+        computer_use = bool(getattr(getattr(self.controller, "cfg", None),
+                                    "computer_use", True))
+        item = self._add(menu, "Computer use — let autopilot click", "toggleComputerUse:")
+        item.setState_(1 if computer_use else 0)
 
         pilot = getattr(self.controller, "autopilot", None)
         if pilot is not None:
@@ -246,6 +458,10 @@ class OrbView(NSView):
             self._submenu(menu, "Autopilot model",
                           [(m, m, m == current_pilot) for m in models],
                           "pickAutopilotModel:")
+            current_ground = getattr(cfg, "grounding_model", "")
+            self._submenu(menu, "Grounding model",
+                          [(m, m, m == current_ground) for m in models],
+                          "pickGroundingModel:")
 
         menu.addItem_(NSMenuItem.separatorItem())
         self._submenu(menu, "Narrate", self._source_items(), "pickSource:")
@@ -278,6 +494,10 @@ class OrbView(NSView):
     def toggleCaptions_(self, sender):
         if self.controller is not None:
             self.controller.toggle_captions()
+
+    def toggleComputerUse_(self, sender):
+        if self.controller is not None:
+            self.controller.toggle_computer_use()
 
     def toggleAutopilot_(self, sender):
         if self.controller is not None:
@@ -360,6 +580,10 @@ class OrbView(NSView):
     def pickFilterModel_(self, sender):
         if self.controller is not None:
             self.controller.set_filter_model(sender.representedObject())
+
+    def pickGroundingModel_(self, sender):
+        if self.controller:
+            self.controller.set_grounding_model(sender.representedObject())
 
     def pickAutopilotModel_(self, sender):
         if self.controller is not None:
@@ -543,7 +767,10 @@ class CaptionBubble:
         self.panel.setContentView_(view)
 
     def update(self, state, enabled: bool) -> None:
-        speaking = state.state is State.SPEAKING and bool(state.label)
+        # spoken lines and labelled thinking (autopilot narrating its own
+        # decision process) both belong in the bubble
+        speaking = (state.state in (State.SPEAKING, State.THINKING)
+                    and bool(state.label))
         if not enabled:
             self._last_label = ""
             self.panel.orderOut_(None)
@@ -713,6 +940,7 @@ def run_orb(state: AppState, size: int = 130, margin: int = 28, controller=None)
         | NSWindowCollectionBehaviorFullScreenAuxiliary
     )
     window.setIgnoresMouseEvents_(False)
+    window.setAcceptsMouseMovedEvents_(True)
 
     view = OrbView.alloc().initWithFrame_state_controller_(
         NSMakeRect(0, 0, size, size), state, controller
@@ -729,6 +957,10 @@ def run_orb(state: AppState, size: int = 130, margin: int = 28, controller=None)
         try:
             enabled = bool(getattr(getattr(controller, "cfg", None), "captions", True))
             bubble.update(state, enabled)
+            # the bubble raises itself every frame while visible; while the
+            # hover toggles are out, keep the orb above it so they stay usable
+            if getattr(view, "hover_level", 0.0) > 0.05:
+                window.orderFrontRegardless()
             tick["n"] += 1
             if tick["n"] % 3 == 0:      # AX frame reads at ~10 Hz is plenty
                 border.update(getattr(controller, "reader", None))
