@@ -87,15 +87,53 @@ def request_accessibility() -> bool:
         return False
 
 
-def repair_accessibility() -> None:
+def running_bundle_id() -> str | None:
+    """Bundle identifier macOS attributes this process to, or None.
+
+    If the app bundle's C launcher could not be compiled at install time the
+    shell fallback execs the venv python, and every permission dialog and TCC
+    record belongs to *python*, not Ollie — the 'Ollie' row never appears and
+    no amount of resetting fixes it.
+    """
+    try:
+        from Foundation import NSBundle
+
+        return NSBundle.mainBundle().bundleIdentifier()
+    except Exception:
+        return None
+
+
+def repair_accessibility() -> str:
     """Full recovery from a stale grant: reset, re-prompt, open the pane.
 
     The prompt only appears when no record exists, so the reset must come
     first; the pane is opened regardless so the user can confirm the toggle.
+    Returns a one-line human-readable outcome so the caller can surface it —
+    silence here is exactly what makes this class of failure so confusing.
     """
-    reset_accessibility()
-    request_accessibility()
+    bundle = running_bundle_id()
+    if bundle != OLLIE_BUNDLE_ID:
+        # resetting com.swastikroy.ollie is pointless: TCC never checks it
+        log.warning("running as %r, not the Ollie bundle — permissions "
+                    "attach to that identity", bundle)
+        open_settings("accessibility")
+        return (f"Ollie is running as '{bundle or 'no bundle'}', not as the "
+                "app — reinstall so the native launcher builds (needs Xcode "
+                "Command Line Tools), or the Ollie row will never appear.")
+
+    reset_ok = reset_accessibility()
+    trusted = request_accessibility()
     open_settings("accessibility")
+    log.info("accessibility repair: reset=%s trusted-after-prompt=%s",
+             reset_ok, trusted)
+    if trusted:
+        return "Accessibility is granted and working."
+    if reset_ok:
+        return ("Stale grant cleared — enable Ollie in the Accessibility "
+                "pane that just opened, then relaunch Ollie.")
+    return ("Could not clear the old grant (see the log) — in the "
+            "Accessibility pane, remove Ollie with − and re-add it with +, "
+            "choosing /Applications/Ollie.app.")
 
 
 _IOHID_LISTEN = 1          # kIOHIDRequestTypeListenEvent
