@@ -741,11 +741,7 @@ class OrbView(NSView):
             self.controller.narrate_transcript()
             return
         if value == "grant-ax":
-            import threading
-
-            from .permissions import repair_accessibility
-
-            threading.Thread(target=repair_accessibility, daemon=True).start()
+            self._repair_accessibility()
             return
         pid, index, label = value.split(":", 2)
         self.controller.narrate_window(int(pid), int(index), label)
@@ -827,9 +823,7 @@ class OrbView(NSView):
                 daemon=True).start()
 
     def openAccess_(self, sender):
-        import threading
-
-        from .permissions import open_settings, repair_accessibility
+        from .permissions import open_settings
 
         try:
             from ApplicationServices import AXIsProcessTrusted
@@ -842,7 +836,21 @@ class OrbView(NSView):
         else:
             # the Settings checkbox may show "on" while the grant is keyed to
             # a signature this build no longer has — reset and re-request
-            threading.Thread(target=repair_accessibility, daemon=True).start()
+            self._repair_accessibility()
+
+    @objc.python_method
+    def _repair_accessibility(self):
+        import threading
+
+        from .permissions import repair_accessibility
+
+        def work():
+            outcome = repair_accessibility()
+            show = getattr(self.controller, "_show_error", None)
+            if show is not None:
+                show(outcome)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def openMic_(self, sender):
         from .permissions import open_settings
