@@ -1,6 +1,6 @@
 [project]
 name = "ollie"
-version = "0.1.0"
+version = "0.2.0"
 description = "A voice narrator for terminal coding agents"
 requires-python = ">=3.10"
 dependencies = [
