@@ -114,6 +114,8 @@ def render(events: list[dict]) -> str:
     for key, items in sorted(groups.items(), key=lambda kv: kv[1][0].get("ts", 0)):
         rows = [f"── {labels.get(key, key)} " + "─" * 20]
         for e in items:
+            if e.get("type") == "error":
+                continue         # errors live in the bubble and the log only
             if e.get("type") == "source":
                 continue                       # the header already says it
             when = time.strftime("%H:%M:%S", time.localtime(e.get("ts", 0)))
@@ -139,7 +141,7 @@ def render_html(events: list[dict]) -> str:
     ordered = sorted(groups.items(), key=lambda kv: kv[1][-1].get("ts", 0), reverse=True)
     shown = 0
     for key, items in ordered:
-        msgs = [e for e in items if e.get("type") != "source"]
+        msgs = [e for e in items if e.get("type") not in ("source", "error")]
         if not msgs:
             continue
         cid = f"conv{shown}"

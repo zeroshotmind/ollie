@@ -165,6 +165,7 @@ class Autopilot:
         self.clear = None      # callable() -> bool: empty the focused field
         self.scroll = None     # callable("up"|"down") -> bool
         self.status = lambda text: None   # live "what am I doing" for the bubble
+        self.error = lambda text: None    # failures for the bubble (never spoken)
         self.window_shot = None  # callable -> (png, w, h) | None: current window
         self._failures = 0       # consecutive turns that produced no action
         self._client = httpx.Client(timeout=cfg.filter_timeout)
@@ -306,7 +307,9 @@ class Autopilot:
                 raw = self._ask()
             except Exception as exc:
                 log.error("autopilot cannot reach the model: %s — will retry next turn", exc)
+                self.error(f"Autopilot can't reach its model: {exc}")
                 self.status("")
+                self._note_failure()
                 return
 
             verdict, payload = parse_reply(raw)

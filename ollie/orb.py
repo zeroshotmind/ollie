@@ -99,6 +99,44 @@ class OrbView(NSView):
 
     def mouseEntered_(self, event):
         self.hover = True
+        # The pointer always hovers before it can right-click: prefetch the
+        # slow menu ingredients (Ollama models, say voices, the AX window
+        # walk) now, so the menu itself builds from warm caches instantly.
+        self._prefetch_menu_data()
+
+    @objc.python_method
+    def _prefetch_menu_data(self):
+        import threading as _threading
+        import time as _time
+
+        if getattr(self, "_prefetching", False):
+            return
+        self._prefetching = True
+
+        def refresh():
+            try:
+                now = _time.time()
+                cache = getattr(self, "_models_cache", None)
+                if not cache or now - cache[0] >= 30.0:
+                    from .config import Config
+                    from .filter import list_models
+
+                    cfg = getattr(self.controller, "cfg", None) or Config.load({})
+                    self._models_cache = (_time.time(), list_models(cfg))
+                cache = getattr(self, "_voices_cache", None)
+                if not cache or now - cache[0] >= 300.0:
+                    from .tts import list_voices
+
+                    self._voices_cache = (_time.time(), list_voices())
+                from .readers.window import list_windows
+
+                self._windows_cache = (_time.time(), list_windows())
+            except Exception:
+                log.exception("menu prefetch failed")
+            finally:
+                self._prefetching = False
+
+        _threading.Thread(target=refresh, daemon=True).start()
 
     def mouseExited_(self, event):
         self.hover = False
@@ -472,6 +510,16 @@ class OrbView(NSView):
         self._add(menu, "Accessibility settings…", "openAccess:")
         self._add(menu, "Input Monitoring settings…", "openInput:")
         self._add(menu, "Microphone settings…", "openMic:")
+        try:
+            from .permissions import screen_recording_granted
+
+            granted = screen_recording_granted()
+        except Exception:
+            granted = False
+        self._add(menu,
+                  "Screen Recording settings… "
+                  + ("✓ granted" if granted else "⚠ needed for computer use"),
+                  "openScreen:")
         self._add(menu, "Open log", "openLog:")
         menu.addItem_(NSMenuItem.separatorItem())
         self._add(menu, "Quit Ollie", "quitOllie:", "q")
@@ -531,10 +579,18 @@ class OrbView(NSView):
 
             current = getattr(cfg, "kokoro_voice", "")
             return [(v, v, v == current) for v in KOKORO_VOICES]
-        from .tts import list_voices
-
         current = getattr(cfg, "voice", "")
-        names = [name for name, _ in list_voices()][:14]
+        cache = getattr(self, "_voices_cache", None)
+        if cache:
+            voices = cache[1]
+        else:                          # first open before any prefetch landed
+            from .tts import list_voices
+
+            voices = list_voices()
+            import time as _time
+
+            self._voices_cache = (_time.time(), voices)
+        names = [name for name, _ in voices][:14]
         if current and current not in names:
             names.insert(0, current)
         return [(name, name, name == current) for name in names]
@@ -548,9 +604,17 @@ class OrbView(NSView):
         pinned = (getattr(reader, "pid", None), getattr(reader, "window_index", None))
         items = [("Claude Code session (default)", "claude", on_transcript)]
         try:
-            from .readers.window import list_windows
+            import time as _time
 
-            for win in list_windows():
+            cache = getattr(self, "_windows_cache", None)
+            if cache and _time.time() - cache[0] < 6.0:
+                windows = cache[1]
+            else:
+                from .readers.window import list_windows
+
+                windows = list_windows()
+                self._windows_cache = (_time.time(), windows)
+            for win in windows:
                 title = win["title"]
                 if len(title) > 46:
                     title = title[:46] + "…"
@@ -568,7 +632,9 @@ class OrbView(NSView):
         import time as _time
 
         cache = getattr(self, "_models_cache", None)
-        if cache and _time.time() - cache[0] < 30.0:
+        if cache:
+            # possibly stale is fine — the hover prefetch refreshes it; never
+            # block the click on a 3s HTTP timeout
             return cache[1]
         from .config import Config
         from .filter import list_models
@@ -681,6 +747,19 @@ class OrbView(NSView):
         from .permissions import open_settings
 
         open_settings("input_monitoring")
+
+    def openScreen_(self, sender):
+        # raise the system prompt if never asked, then open the pane so the
+        # user can flip the switch for Ollie
+        try:
+            from Quartz import CGRequestScreenCaptureAccess
+
+            CGRequestScreenCaptureAccess()
+        except Exception:
+            pass
+        from .permissions import open_settings
+
+        open_settings("screen_recording")
 
     def openLog_(self, sender):
         import subprocess

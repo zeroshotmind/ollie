@@ -39,6 +39,7 @@ class WhisperSTT:
         self._lock = threading.Lock()
         self._started_at = 0.0
         self._ready = threading.Event()
+        self.last_error = ""     # why the last transcription returned nothing
         self._mlx = None
 
     # ------------------------------------------------------------------
@@ -183,8 +184,10 @@ class WhisperSTT:
                 self._mlx = mlx_whisper
             except Exception as exc:
                 log.error("mlx_whisper unavailable: %s", exc)
+                self.last_error = f"mlx_whisper unavailable: {exc}"
                 return ""
         started = time.time()
+        self.last_error = ""
         try:
             from .mlxexec import run as mlx_run
 
@@ -201,6 +204,7 @@ class WhisperSTT:
             )
         except Exception as exc:
             log.error("transcription failed: %s", exc)
+            self.last_error = str(exc)
             return ""
         text = str(result.get("text", "")).strip()
         log.info("transcribed %.1fs of audio in %.2fs: %r",

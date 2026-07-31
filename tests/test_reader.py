@@ -370,3 +370,17 @@ def test_keyspec_parsing():
     assert parse_keyspec("ctrl+shift-z") == (6, (1 << 18) | (1 << 17))
     assert parse_keyspec("banana") is None
     assert parse_keyspec("") is None
+
+
+def test_history_hides_error_events():
+    from ollie.history import render, render_html
+
+    events = [
+        {"ts": time.time(), "type": "narration", "text": "did a thing",
+         "source": "claude", "source_label": "claude"},
+        {"ts": time.time(), "type": "error", "text": "Ollama exploded",
+         "source": "claude"},
+    ]
+    assert "did a thing" in render(events)
+    assert "Ollama exploded" not in render(events)
+    assert "Ollama exploded" not in render_html(events)
