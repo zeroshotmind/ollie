@@ -252,13 +252,53 @@ class Narrator:
         return ok
 
     def _speak_aside(self, text: str) -> None:
-        """Status lines from autopilot — spoken unless muted, never queued."""
-        if self.muted:
+        """Status lines (source switches, autopilot) — spoken and captioned,
+        never queued. Muted: caption only; captions off too: dropped."""
+        if self.muted and not self.cfg.captions:
             return
-        threading.Thread(target=self.tts.speak, args=(text,), daemon=True).start()
+
+        def run() -> None:
+            self.state.set(State.SPEAKING, text)
+            if self.muted:
+                time.sleep(min(5.0, 1.2 + 0.3 * len(text.split())))
+            else:
+                self.tts.speak(text)
+            # only step down if nothing else has claimed the state since
+            if self.state.state is State.SPEAKING and self.state.label == text:
+                self.state.set(State.IDLE)
+
+        threading.Thread(target=run, daemon=True).start()
 
     def toggle_autopilot(self) -> bool:
         return self.autopilot.toggle()
+
+    def arm_autopilot_from_file(self, path: str) -> None:
+        """Arm autopilot with a goal written in a markdown file.
+
+        Same loop as a spoken goal — the file is just a roomier way to
+        describe the task (steps, constraints, acceptance criteria).
+        """
+        import os
+
+        try:
+            with open(os.path.expanduser(path), encoding="utf-8") as fh:
+                goal = fh.read().strip()
+        except OSError as exc:
+            log.error("cannot read goal file %s: %s", path, exc)
+            self._speak_aside("I couldn't read that goal file.")
+            return
+        if not goal:
+            self._speak_aside("That goal file is empty.")
+            return
+        # keep well inside the model's context window
+        if len(goal) > 4000:
+            goal = goal[:4000] + "\n(…truncated)"
+        name = os.path.basename(path)
+        log.info("autopilot goal from %s (%d chars)", path, len(goal))
+        self.history.record("speech", f"goal file: {name}", role="autopilot-goal",
+                            source=_context_key(self.reader), target=name)
+        self.autopilot.enabled = True
+        self.autopilot.set_goal(goal)
 
     # ------------------------------------------------------------------
     # source switching (orb menu → Narrate window)

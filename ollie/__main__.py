@@ -88,6 +88,8 @@ def _parse_args(argv):
                    help="arm autopilot at startup (give the goal with --goal)")
     p.add_argument("--goal", dest="autopilot_goal",
                    help="the goal autopilot should drive the agent toward")
+    p.add_argument("--goal-file", dest="autopilot_goal_file",
+                   help="markdown file whose contents define the autopilot goal")
     p.add_argument("--tone", choices=["neutral", "warm", "snarky", "minimal"],
                    help="delivery tone for brief/full narration")
     p.add_argument("--list-voices", action="store_true",
@@ -337,7 +339,9 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGTERM, shutdown)
 
     narrator.start()
-    if cfg.autopilot or cfg.autopilot_goal:
+    if cfg.autopilot_goal_file:
+        narrator.arm_autopilot_from_file(cfg.autopilot_goal_file)
+    elif cfg.autopilot or cfg.autopilot_goal:
         narrator.autopilot.arm(cfg.autopilot_goal)
     from .hotkey import pretty as pretty_key
 
