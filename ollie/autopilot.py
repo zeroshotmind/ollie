@@ -91,6 +91,8 @@ class Autopilot:
         self._inject = inject
         self._speak = speak
         self._frontmost = frontmost
+        self.extra_app = ""    # app of a pinned window — also a legal target
+        self.prepare = None    # callable that focuses the pinned window first
         self._client = httpx.Client(timeout=cfg.filter_timeout)
 
         self.enabled = False
@@ -123,13 +125,28 @@ class Autopilot:
         self.awaiting_goal = False
         self.turns = 0
         self.sent = []
-        self._fresh_output = False
-        log.info("autopilot goal: %s", self.goal)
-        self._speak("Goal set. Starting.")
+        # A new goal starts from a clean slate: judging it against output
+        # observed under the *previous* goal declares instant false victory.
+        self._output.clear()
+        log.info("autopilot goal: %s (target: %s)", self.goal, self.extra_app or "terminal")
+        self._speak(f"Goal set. Driving {self.extra_app}." if self.extra_app
+                    else "Goal set. Starting.")
         self._start_idle_watch()
-        # The opening move is the goal itself, verbatim — the model only takes
-        # over once there is output to react to.
-        threading.Thread(target=self._send, args=(self.goal,), daemon=True).start()
+        if self.extra_app:
+            # Driving a pinned window (a chat, another tool): the spoken goal
+            # is an instruction *about* the conversation, not its first line —
+            # let the model author the opening instead of sending it verbatim.
+            self._fresh_output = True
+            threading.Thread(target=self._advance, daemon=True).start()
+        else:
+            # A coding agent takes the goal itself as the first prompt.
+            self._fresh_output = False
+            threading.Thread(target=self._send, args=(self.goal,), daemon=True).start()
+
+    def reset_observations(self) -> None:
+        """Forget observed output — the narration source changed underneath us."""
+        self._output.clear()
+        self._fresh_output = False
 
     def disarm(self, reason: str = "", speak: bool = True) -> None:
         was_enabled = self.enabled
@@ -156,10 +173,26 @@ class Autopilot:
             if self.enabled and not self.awaiting_goal:
                 threading.Thread(target=self._advance, daemon=True).start()
             return
-        text = chunk.text.strip()
+        text = self._strip_own_echo(chunk.text.strip())
         if text:
             self._output.append((chunk.role, text[:400]))
             self._fresh_output = True
+
+    def _strip_own_echo(self, text: str) -> str:
+        """Drop lines that are our own sent messages coming back off the
+        screen. In a chat window everything we type reappears as 'output';
+        without this the model converses with itself and loops."""
+        if not text or not self.sent:
+            return text
+        recent = [s.lower() for s in self.sent[-5:]]
+        kept = []
+        for line in text.splitlines():
+            low = " ".join(line.lower().split())
+            if any(low == s or (len(low) > 12 and low in s)
+                   or (len(low) > 20 and s in low) for s in recent):
+                continue
+            kept.append(line)
+        return "\n".join(kept).strip()
 
     def _start_idle_watch(self) -> None:
         if self._idle_thread is not None and self._idle_thread.is_alive():
@@ -226,6 +259,14 @@ class Autopilot:
         waited = 0.0
         warned = False
         while self.enabled:
+            if self.prepare is not None:
+                # narrating a pinned window: bring it to the front so the
+                # injection lands there, not in whatever happens to be focused
+                try:
+                    self.prepare()
+                    time.sleep(0.35)
+                except Exception:
+                    log.exception("prepare-focus failed")
             app = self._frontmost()
             if self._is_terminal(app):
                 if self._inject(prompt):
@@ -263,6 +304,10 @@ class Autopilot:
 
     def _is_terminal(self, app: str) -> bool:
         wanted = [t.strip().lower() for t in self.cfg.autopilot_frontmost.split(",") if t.strip()]
+        extra = (self.extra_app or "").strip().lower()
+        if extra and extra in (app or "").lower():
+            # narrating a pinned window: its own app is always a legal target
+            return True
         return any(t in (app or "").lower() for t in wanted)
 
     def _ask(self) -> str:
@@ -273,20 +318,26 @@ class Autopilot:
             f"{verbs.get(role, role)}: {text}" for role, text in self._output
         ) or "(no output yet)"
         user = f"GOAL:\n{self.goal}\n\nALREADY SENT:\n{sent}\n\nLATEST OUTPUT:\n{output[-5000:]}"
-        response = self._client.post(
-            f"{self.cfg.ollama_url}/api/chat",
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user},
-                ],
-                "stream": False,
-                "options": {"temperature": 0.3, "num_predict": 160, "num_ctx": 8192},
-            },
-        )
+        body = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user},
+            ],
+            "stream": False,
+            # Thinking models (qwen3 family) otherwise spend the whole token
+            # budget on reasoning and return a truncated instruction.
+            "think": False,
+            "options": {"temperature": 0.3, "num_predict": 220, "num_ctx": 8192},
+        }
+        response = self._client.post(f"{self.cfg.ollama_url}/api/chat", json=body)
+        if response.status_code == 400:
+            # some models reject the think flag — retry without it
+            body.pop("think", None)
+            response = self._client.post(f"{self.cfg.ollama_url}/api/chat", json=body)
         response.raise_for_status()
-        return ((response.json() or {}).get("message") or {}).get("content", "") or ""
+        content = ((response.json() or {}).get("message") or {}).get("content", "") or ""
+        return re.sub(r"<think>.*?(</think>|$)", "", content, flags=re.S).strip()
 
     def close(self) -> None:
         self.enabled = False

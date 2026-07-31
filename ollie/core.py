@@ -14,7 +14,7 @@ import time
 from .config import Config
 from .autopilot import Autopilot
 from .filter import OllamaFilter
-from .hotkey import PushToTalk
+from .hotkey import PushToTalk, TapKey
 from .injector import Injector
 from .message import Chunk
 from .readers.base import Reader
@@ -23,6 +23,13 @@ from .stt import WhisperSTT
 from .tts import make_tts
 
 log = logging.getLogger("ollie.core")
+
+
+def _context_key(reader: Reader) -> str:
+    """Stable identity of a narration source, for per-source spoken memory."""
+    if getattr(reader, "name", "") == "window":
+        return f"window:{reader.pid}:{reader.window_index}"
+    return "claude"
 
 
 def _frontmost_app() -> str:
@@ -46,6 +53,7 @@ class Narrator:
         self.stt = WhisperSTT(cfg, self.state)
         self.injector = Injector(cfg)
         self.ptt = PushToTalk(cfg, self._on_talk_start, self._on_talk_stop)
+        self.window_key = TapKey(cfg.window_hotkey, self._on_window_key)
         self.autopilot = Autopilot(
             cfg,
             inject=lambda text: self.injector.inject(text, press_enter=True),
@@ -71,11 +79,13 @@ class Narrator:
             self._spawn(self.tts.warmup, "tts-warmup")
         if self.ptt.start():
             self._spawn(self._watch_hotkey, "hotkey-watchdog")
+        self.window_key.start()
 
     def stop(self) -> None:
         self.state.stop()
         self.tts.stop()
         self.ptt.stop()
+        self.window_key.stop()
         self.reader.stop()
         self.filter.close()
         self.autopilot.close()
@@ -222,6 +232,69 @@ class Narrator:
 
     def toggle_autopilot(self) -> bool:
         return self.autopilot.toggle()
+
+    # ------------------------------------------------------------------
+    # source switching (orb menu → Narrate window)
+    # ------------------------------------------------------------------
+    def narrate_window(self, pid: int, index: int, label: str) -> None:
+        """Pin narration to one specific window, like sharing it on a call."""
+        from .readers.window import WindowReader
+
+        reader = WindowReader(self.cfg, pid, index, label)
+        self._swap_reader(reader)
+        # autopilot may inject into the pinned window's app, not just terminals,
+        # and focuses that window first so the text lands in the right place
+        self.autopilot.extra_app = label.split(" — ")[0].strip()
+        self.autopilot.prepare = reader.focus
+        self._speak_aside(f"Now narrating {label}.")
+
+    def narrate_transcript(self) -> None:
+        """Back to the default Claude Code transcript reader."""
+        from .readers.claude_code import ClaudeCodeReader
+
+        self._swap_reader(ClaudeCodeReader(self.cfg))
+        self.autopilot.extra_app = ""
+        self.autopilot.prepare = None
+        self._speak_aside("Back to the Claude Code session.")
+
+    def _on_window_key(self) -> None:
+        """Tap the window hotkey: narrate the focused window; tap it again on
+        the same window to go back to the Claude Code transcript."""
+        # The tap callback must return fast — do the AX work off-thread.
+        threading.Thread(target=self._pin_frontmost, daemon=True).start()
+
+    def _pin_frontmost(self) -> None:
+        from .readers.window import frontmost_window
+
+        win = frontmost_window()
+        if win is None:
+            self._speak_aside("I can't see which window is focused.")
+            return
+        reader = self.reader
+        if (getattr(reader, "name", "") == "window"
+                and getattr(reader, "pid", None) == win["pid"]
+                and getattr(reader, "window_index", None) == win["index"]):
+            self.narrate_transcript()
+            return
+        title = win["title"]
+        if len(title) > 46:
+            title = title[:46] + "…"
+        self.narrate_window(win["pid"], win["index"], f"{win['app']} — {title}")
+
+    def _swap_reader(self, reader: Reader) -> None:
+        old = self.reader
+        reader.start()
+        # _read_loop re-reads self.reader every iteration, so assignment is
+        # the whole handover; stop the old one after so no poll gap opens
+        self.reader = reader
+        self.filter.set_context(_context_key(reader))
+        try:
+            old.stop()
+        except Exception:
+            log.exception("old reader did not stop cleanly")
+        self._drain()          # drop queued chunks from the old source
+        self.autopilot.reset_observations()
+        log.info("reader: %s", reader.describe())
 
     def set_style(self, style: str) -> None:
         """Runtime style switch (also persisted, so it survives restarts)."""

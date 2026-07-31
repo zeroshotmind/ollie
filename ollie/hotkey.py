@@ -152,6 +152,7 @@ class _EventTap:
             CFRunLoopAddSource,
             CFRunLoopGetCurrent,
             CFRunLoopRun,
+            CGEventGetFlags,
             CGEventGetIntegerValueField,
             CGEventTapCreate,
             CGEventTapEnable,
@@ -178,8 +179,6 @@ class _EventTap:
                 log.warning("event tap disabled by macOS (%s) — re-enabled", why)
                 return event
             try:
-                from Quartz import CGEventGetFlags
-
                 keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
                 flags = CGEventGetFlags(event)
                 if type_ == kCGEventKeyDown:
@@ -382,6 +381,68 @@ class PushToTalk:
 
     def _is_char(self, keycode: int) -> bool:
         return KEYCODE_NAMES.get(keycode) == self._char
+
+
+# ----------------------------------------------------------------------
+# single-key tap (used for "narrate the focused window")
+# ----------------------------------------------------------------------
+class TapKey:
+    """Fire a callback on a *clean tap* of one key: press then release, with
+    no other key in between and within a short window. A modifier used as
+    part of a shortcut (⌘C on the same key) therefore never triggers it."""
+
+    MAX_HOLD = 0.6
+    COOLDOWN = 2.0    # ignore re-taps right after one fired: "did it register?"
+                      # double-taps must not silently toggle the state back
+
+    def __init__(self, key_name: str, on_tap: Callable[[], None]) -> None:
+        self.key_name = key_name
+        self.on_tap = on_tap
+        self._targets: set[int] = set()
+        self._tap: _EventTap | None = None
+        self._down_at = 0.0
+        self._fired_at = 0.0
+        self._clean = False
+
+    def start(self) -> bool:
+        key = normalise(self.key_name)
+        self._targets = set(KEYCODES.get(key, set()))
+        if not self._targets:
+            log.error("unknown window hotkey %r — window switching by key disabled",
+                      self.key_name)
+            return False
+        self._tap = _EventTap(self._on_key)
+        if not self._tap.start():
+            return False
+        log.info("window hotkey: tap %s to narrate the focused window", pretty(self.key_name))
+        return True
+
+    def stop(self) -> None:
+        if self._tap is not None:
+            self._tap.stop()
+            self._tap = None
+
+    def _on_key(self, keycode: int, is_down: bool | None, flags: int) -> None:
+        import time as _time
+
+        if keycode not in self._targets:
+            self._clean = False          # some other key while ours was held
+            return
+        if is_down is None:
+            is_down = bool(flags & _flag_for(keycode))
+        if is_down:
+            self._down_at = _time.time()
+            self._clean = True
+            return
+        now = _time.time()
+        if (self._clean and now - self._down_at <= self.MAX_HOLD
+                and now - self._fired_at >= self.COOLDOWN):
+            self._fired_at = now
+            try:
+                self.on_tap()
+            except Exception:
+                log.exception("window hotkey callback failed")
+        self._clean = False
 
 
 # ----------------------------------------------------------------------

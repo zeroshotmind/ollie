@@ -153,9 +153,20 @@ def clean_for_verbatim(text: str) -> str:
 class OllamaFilter:
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
-        self.history: deque[str] = deque(maxlen=cfg.history_window)
+        # Spoken-history memory is kept per source: what was said about one
+        # window must not suppress (or contaminate the context of) another.
+        # Switching sources stashes the current memory and restores the
+        # target's, so coming back to a source picks up where it left off.
+        self._histories: dict[str, deque[str]] = {}
+        self.history: deque[str] = self._histories.setdefault(
+            "default", deque(maxlen=cfg.history_window))
         self._client = httpx.Client(timeout=cfg.filter_timeout)
         self.degraded = False
+
+    def set_context(self, key: str) -> None:
+        """Switch to the spoken-history memory belonging to ``key``."""
+        self.history = self._histories.setdefault(
+            key, deque(maxlen=self.cfg.history_window))
 
     # ------------------------------------------------------------------
     def health(self) -> tuple[bool, str]:
