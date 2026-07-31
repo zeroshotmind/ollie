@@ -472,13 +472,26 @@ class OrbView(NSView):
                 self._add(menu, "Autopilot — goal from file…", "pickGoalFile:")
         menu.addItem_(NSMenuItem.separatorItem())
 
-        current = getattr(getattr(self.controller, "cfg", None), "style", "brief")
+        self._submenu(menu, "Watch", self._source_items(), "pickSource:")
+        menu.addItem_(NSMenuItem.separatorItem())
+
+        cfg = getattr(self.controller, "cfg", None)
+        current = getattr(cfg, "style", "brief")
+        style_parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Style", None, "")
+        style_sub = NSMenu.alloc().initWithTitle_("Style")
         for style, label in (("brief", "Brief — one-line summaries"),
                              ("full", "Full — loss-less retelling"),
                              ("verbatim", "Verbatim — the agent's own words")):
-            item = self._add(menu, label, f"setStyle{style.capitalize()}:")
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                label, objc.selector(getattr(self, f"setStyle{style.capitalize()}_"),
+                                     signature=b"v@:@"), "")
+            item.setTarget_(self)
             item.setState_(1 if style == current else 0)
-        cfg = getattr(self.controller, "cfg", None)
+            style_sub.addItem_(item)
+        style_parent.setSubmenu_(style_sub)
+        menu.addItem_(style_parent)
+
         engine = getattr(cfg, "tts_engine", "say")
         self._submenu(menu, "Engine", [
             ("macOS say — instant, robotic", "say", engine == "say"),
@@ -486,46 +499,93 @@ class OrbView(NSView):
         ], "pickEngine:")
         self._submenu(menu, "Voice", self._voice_items(cfg), "pickVoice:")
         self._submenu(menu, "Tone", self._tone_items(cfg), "pickTone:")
+
         models = self._model_names(cfg)
         if models:
+            models_parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Models", None, "")
+            models_sub = NSMenu.alloc().initWithTitle_("Models")
             current_filter = getattr(cfg, "ollama_model", "")
             current_pilot = getattr(cfg, "autopilot_model", "") or current_filter
-            self._submenu(menu, "Narration model",
-                          [(m, m, m == current_filter) for m in models],
-                          "pickFilterModel:")
-            self._submenu(menu, "Autopilot model",
-                          [(m, m, m == current_pilot) for m in models],
-                          "pickAutopilotModel:")
             current_ground = getattr(cfg, "grounding_model", "")
-            self._submenu(menu, "Grounding model",
-                          [(m, m, m == current_ground) for m in models],
-                          "pickGroundingModel:")
+            for title, chosen, action in (
+                ("Narration", current_filter, "pickFilterModel:"),
+                ("Autopilot", current_pilot, "pickAutopilotModel:"),
+                ("Grounding", current_ground, "pickGroundingModel:"),
+            ):
+                self._submenu(models_sub, title,
+                              [(m, m, m == chosen) for m in models], action)
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Check & download missing…",
+                objc.selector(self.runDoctor_, signature=b"v@:@"), "")
+            item.setTarget_(self)
+            models_sub.addItem_(NSMenuItem.separatorItem())
+            models_sub.addItem_(item)
+            models_parent.setSubmenu_(models_sub)
+            menu.addItem_(models_parent)
+        else:
+            self._add(menu, "Check models & download missing…", "runDoctor:")
 
-        menu.addItem_(NSMenuItem.separatorItem())
-        self._submenu(menu, "Watch", self._source_items(), "pickSource:")
+        self._permissions_submenu(menu)
 
         menu.addItem_(NSMenuItem.separatorItem())
         self._add(menu, "History…", "openHistory:")
-        self._add(menu, "Check models & download missing…", "runDoctor:")
         self._add(menu, "Settings & dependencies…", "openReport:")
-        self._add(menu, "Accessibility settings…", "openAccess:")
-        self._add(menu, "Input Monitoring settings…", "openInput:")
-        self._add(menu, "Microphone settings…", "openMic:")
-        try:
-            from .permissions import screen_recording_granted
-
-            granted = screen_recording_granted()
-        except Exception:
-            granted = False
-        self._add(menu,
-                  "Screen Recording settings… "
-                  + ("✓ granted" if granted else "⚠ needed for computer use"),
-                  "openScreen:")
         self._add(menu, "Open log", "openLog:")
         menu.addItem_(NSMenuItem.separatorItem())
         self._add(menu, "Quit Ollie", "quitOllie:", "q")
 
         NSMenu.popUpContextMenu_withEvent_forView_(menu, event, self)
+
+    @objc.python_method
+    def _permissions_submenu(self, menu):
+        """One 'Permissions' submenu, every entry carrying its live status.
+
+        The checks are all local and instant (no prompting), so running them
+        at menu-open time is fine — and a glance shows what is missing
+        instead of four opaque 'settings…' items.
+        """
+        from .permissions import (
+            AUTHORIZED,
+            input_monitoring_status,
+            microphone_status,
+            screen_recording_granted,
+        )
+
+        try:
+            from ApplicationServices import AXIsProcessTrusted
+
+            ax = bool(AXIsProcessTrusted())
+        except Exception:
+            ax = False
+
+        def mark(ok, why):
+            return "✓" if ok else f"⚠ {why}"
+
+        entries = [
+            (f"Accessibility {mark(ax, 'needed to read windows')}…", "openAccess:"),
+            (f"Microphone {mark(microphone_status() == AUTHORIZED, 'needed to hear you')}…",
+             "openMic:"),
+            (f"Input Monitoring {mark(input_monitoring_status() == AUTHORIZED, 'needed for push-to-talk')}…",
+             "openInput:"),
+            (f"Screen Recording {mark(screen_recording_granted(), 'needed for computer use')}…",
+             "openScreen:"),
+        ]
+        parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Permissions", None, "")
+        # surface trouble without having to open the submenu
+        broken = sum(1 for label, _ in entries if "⚠" in label)
+        if broken:
+            parent.setTitle_(f"Permissions — ⚠ {broken} missing")
+        sub = NSMenu.alloc().initWithTitle_("Permissions")
+        for label, action in entries:
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                label, objc.selector(getattr(self, action.replace(":", "_")),
+                                     signature=b"v@:@"), "")
+            item.setTarget_(self)
+            sub.addItem_(item)
+        parent.setSubmenu_(sub)
+        menu.addItem_(parent)
 
     @objc.python_method
     def _add(self, menu, title, action, key=""):
