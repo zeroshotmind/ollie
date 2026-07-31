@@ -415,3 +415,16 @@ def test_doctor_required_and_missing():
         missing = doctor.missing_models(cfg)
     assert missing == [("qwen3-vl:30b-a3b-instruct", "computer-use vision")]
     assert "ui-venus-8b" in doctor.IMPORTERS
+
+
+def test_doctor_startup_skips_computer_use_models():
+    from ollie import doctor
+
+    cfg = Config.load({})
+    cfg.ollama_model = "a"
+    cfg.autopilot_model = "b"
+    cfg.computer_use = True          # flag on, but startup must not care
+    cfg.grounding_model = "g"
+    cfg.autopilot_vision_model = "v"
+    assert [n for n, _ in doctor.required_models(cfg, computer_use=False)] == ["a", "b"]
+    assert [n for n, _ in doctor.required_models(cfg)] == ["a", "b", "g", "v"]
