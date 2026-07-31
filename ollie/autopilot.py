@@ -69,11 +69,18 @@ WINDOW_SYSTEM_PROMPT = """You operate the {app} application window toward a goal
 Reply with exactly one line, nothing else:
 DONE: <one short sentence of evidence>           — only if the screen shows the goal is achieved.
 CLICK: <short visual description of one element> — press a button, link, tab, menu item — or focus a text box before typing.
+DOUBLECLICK: <short visual description>          — open an item, or select a word.
 PROMPT: <text to type>                           — literal keystrokes typed into the focused text field, then Enter.
+KEY: <one keystroke>                             — e.g. KEY: escape, KEY: tab, KEY: backspace, KEY: down, KEY: cmd-a.
+CLEAR:                                           — empty the focused text field (select all + delete).
+SCROLL: up|down                                  — scroll the window to reveal more of the page.
+WAIT:                                            — the screen is still loading or mid-animation; look again shortly.
 
 Rules:
 - {app} is an ordinary application, not an assistant. PROMPT is what a human would type, never an instruction about what to do ("Search for jazz" is wrong; CLICK the search box, then PROMPT: jazz).
-- Typed text lands only in a focused text field: unless your previous action clicked a text box, CLICK it first.
+- Typed text lands only in a focused text field: unless your previous action clicked a text box, CLICK it first. If the field already contains text, CLEAR before typing.
+- If the goal's target is not visible in the screenshot, SCROLL toward it before clicking blindly.
+- Use KEY: escape to dismiss popups or menus that block the page.
 - One action per turn. CLICK descriptions name one visible element, under 15 words. PROMPT text under 30 words.
 - Never repeat an action already in ALREADY SENT unless the screen shows it had no effect.
 
@@ -98,6 +105,11 @@ YOU REPLY: CLICK: the first search result thumbnail"""
 _DONE = re.compile(r"^\s*DONE\s*:?\s*(.*)", re.I)
 _PROMPT = re.compile(r"^\s*PROMPT\s*:?\s*(.*)", re.I | re.S)
 _CLICK = re.compile(r"^\s*CLICK\s*:?\s*(.*)", re.I)
+_DBLCLICK = re.compile(r"^\s*DOUBLE\s*-?\s*CLICK\s*:?\s*(.*)", re.I)
+_KEY = re.compile(r"^\s*KEY\b\s*:?\s*(.*)", re.I)
+_CLEAR = re.compile(r"^\s*CLEAR\b\s*:?\s*$", re.I)
+_SCROLL = re.compile(r"^\s*SCROLL\b\s*:?\s*(.*)", re.I)
+_WAIT = re.compile(r"^\s*WAIT\b\s*:?", re.I)
 
 
 def parse_reply(raw: str) -> tuple[str, str]:
@@ -106,10 +118,27 @@ def parse_reply(raw: str) -> tuple[str, str]:
     match = _DONE.match(text)
     if match:
         return "done", match.group(1).strip()
+    match = _DBLCLICK.match(text)
+    if match:
+        payload = " ".join(match.group(1).split())
+        return ("doubleclick", payload[:120]) if payload else ("invalid", "")
     match = _CLICK.match(text)
     if match:
         payload = " ".join(match.group(1).split())
         return ("click", payload[:120]) if payload else ("invalid", "")
+    if _CLEAR.match(text):
+        return "clear", ""
+    if _WAIT.match(text):
+        return "wait", ""
+    match = _KEY.match(text)
+    if match:
+        payload = " ".join(match.group(1).split())
+        return ("key", payload[:40]) if payload else ("invalid", "")
+    match = _SCROLL.match(text)
+    if match:
+        direction = match.group(1).strip().lower()
+        direction = "up" if direction.startswith("up") else "down"
+        return "scroll", direction
     match = _PROMPT.match(text)
     if match:
         payload = " ".join(match.group(1).split())
@@ -131,7 +160,10 @@ class Autopilot:
         self._frontmost = frontmost
         self.extra_app = ""    # app of a pinned window — also a legal target
         self.prepare = None    # callable that focuses the pinned window first
-        self.click = None      # callable(description) -> bool, set in window mode
+        self.click = None      # callable(description, double=False), window mode
+        self.key = None        # callable("escape"/"cmd-a"/…) -> bool
+        self.clear = None      # callable() -> bool: empty the focused field
+        self.scroll = None     # callable("up"|"down") -> bool
         self.status = lambda text: None   # live "what am I doing" for the bubble
         self.window_shot = None  # callable -> (png, w, h) | None: current window
         self._failures = 0       # consecutive turns that produced no action
@@ -294,11 +326,19 @@ class Autopilot:
                 log.warning("unusable model reply, skipping this turn: %r", payload)
                 self._note_failure()
                 return
-            if verdict == "click":
+            if verdict in ("click", "doubleclick"):
                 if self.click is None:
                     log.warning("model asked to click but clicking is unavailable")
                     return
-                self._do_click(payload)
+                self._do_click(payload, double=(verdict == "doubleclick"))
+                return
+            if verdict == "wait":
+                log.info("autopilot waiting — screen not settled")
+                self._fresh_output = True
+                threading.Timer(4.0, self._advance).start()
+                return
+            if verdict in ("key", "clear", "scroll"):
+                self._do_simple(verdict, payload)
                 return
             if self.sent and payload.lower() == self.sent[-1].lower():
                 self.disarm("I keep authoring the same instruction, so I have stalled.")
@@ -319,8 +359,40 @@ class Autopilot:
         if self.extra_app:
             threading.Timer(2.5, self._advance).start()
 
-    def _do_click(self, description: str) -> None:
-        marker = f"CLICK {description}"
+    def _do_simple(self, kind: str, payload: str) -> None:
+        """KEY / CLEAR / SCROLL: focus the pinned window, fire the injector
+        primitive, and keep the loop breathing like every other action."""
+        action = {"key": self.key, "clear": self.clear, "scroll": self.scroll}[kind]
+        if action is None:
+            log.warning("model asked for %s but it is unavailable", kind)
+            self._note_failure()
+            return
+        marker = f"{kind.upper()} {payload}".strip()
+        if self.sent and self.sent[-1].lower() == marker.lower():
+            self.disarm(f"I keep repeating the same {kind} action, so I have stalled.")
+            return
+        self.status(f"Autopilot: {kind} {payload}".strip() + "…")
+        if self.prepare is not None:
+            try:
+                self.prepare()
+                time.sleep(0.35)
+            except Exception:
+                log.exception("prepare-focus failed")
+        ok = action(payload) if payload else action()
+        if ok:
+            self._failures = 0
+            self.turns += 1
+            self.sent.append(marker)
+            log.info("autopilot turn %d/%d -> %s",
+                     self.turns, self.cfg.autopilot_max_turns, marker)
+            self._fresh_output = True
+            threading.Timer(3.0, self._advance).start()
+        else:
+            log.error("autopilot %s action failed", kind)
+            self._note_failure()
+
+    def _do_click(self, description: str, double: bool = False) -> None:
+        marker = f"{'DOUBLECLICK' if double else 'CLICK'} {description}"
         if self.sent and self.sent[-1].lower() == marker.lower():
             self.disarm("I keep clicking the same element, so I have stalled.")
             return
@@ -331,7 +403,7 @@ class Autopilot:
                 time.sleep(0.35)
             except Exception:
                 log.exception("prepare-focus failed")
-        if self.click(description):
+        if self.click(description, double=double):
             self._failures = 0
             self.turns += 1
             self.sent.append(marker)

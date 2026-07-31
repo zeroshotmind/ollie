@@ -331,7 +331,7 @@ def test_autopilot_click_turn():
                       speak=lambda s: None, frontmost=lambda: "WhatsApp")
     pilot.enabled = True
     pilot.goal = "g"
-    pilot.click = lambda d: clicks.append(d) or True
+    pilot.click = lambda d, double=False: clicks.append(d) or True
     pilot._do_click("the Send button")
     assert clicks == ["the Send button"]
     assert pilot.turns == 1
@@ -340,3 +340,33 @@ def test_autopilot_click_turn():
     pilot._do_click("the Send button")
     assert pilot.enabled is False
     pilot.close()
+
+
+def test_autopilot_action_verbs():
+    from ollie.autopilot import parse_reply
+
+    assert parse_reply("KEY: escape") == ("key", "escape")
+    assert parse_reply("key: cmd-a") == ("key", "cmd-a")
+    assert parse_reply("CLEAR:") == ("clear", "")
+    assert parse_reply("CLEAR") == ("clear", "")
+    assert parse_reply("WAIT:") == ("wait", "")
+    assert parse_reply("SCROLL: down") == ("scroll", "down")
+    assert parse_reply("SCROLL: upward") == ("scroll", "up")
+    assert parse_reply("DOUBLECLICK: the file icon") == ("doubleclick", "the file icon")
+    assert parse_reply("DOUBLE-CLICK: the file icon") == ("doubleclick", "the file icon")
+    # words that merely start with a verb are not that verb
+    assert parse_reply("Clearly the goal is done")[0] == "invalid"
+    assert parse_reply("Waiting is pointless")[0] == "invalid"
+
+
+def test_keyspec_parsing():
+    from ollie.injector import parse_keyspec
+
+    assert parse_keyspec("escape") == (53, 0)
+    assert parse_keyspec("Backspace") == (51, 0)
+    assert parse_keyspec("cmd-a") == (0, 1 << 20)
+    assert parse_keyspec("shift tab") == (48, 1 << 17)
+    assert parse_keyspec("press the down arrow") == (125, 0)
+    assert parse_keyspec("ctrl+shift-z") == (6, (1 << 18) | (1 << 17))
+    assert parse_keyspec("banana") is None
+    assert parse_keyspec("") is None
