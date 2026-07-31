@@ -51,7 +51,10 @@ class WhisperSTT:
 
             self._mlx = mlx_whisper
             silence = np.zeros(self.cfg.sample_rate // 2, dtype=np.float32)
-            mlx_whisper.transcribe(
+            from .mlxexec import run as mlx_run
+
+            mlx_run(
+                mlx_whisper.transcribe,
                 silence, path_or_hf_repo=self.cfg.whisper_repo,
                 language="en", verbose=None,
             )
@@ -183,8 +186,13 @@ class WhisperSTT:
                 return ""
         started = time.time()
         try:
+            from .mlxexec import run as mlx_run
+
             # verbose=None (not False) is what silences mlx-whisper's tqdm bar.
-            result = self._mlx.transcribe(
+            # Run on the shared MLX thread: this method is called from a fresh
+            # thread per utterance, and MLX streams are thread-bound.
+            result = mlx_run(
+                self._mlx.transcribe,
                 audio,
                 path_or_hf_repo=self.cfg.whisper_repo,
                 language="en",

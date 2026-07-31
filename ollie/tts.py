@@ -222,9 +222,12 @@ class KokoroTTS:
     # -- lifecycle -----------------------------------------------------
     def warmup(self) -> None:
         try:
+            from .mlxexec import run as mlx_run
+
             self._ensure_model()
             with self._model_lock:
-                list(self._model.generate("Ready.", voice=self.cfg.kokoro_voice))
+                mlx_run(lambda: list(
+                    self._model.generate("Ready.", voice=self.cfg.kokoro_voice)))
             log.info("kokoro ready (%s, voice %s)", self.cfg.kokoro_model, self.cfg.kokoro_voice)
         except Exception as exc:
             log.error("kokoro warmup failed (%s) — will fall back to `say`", exc)
@@ -233,7 +236,9 @@ class KokoroTTS:
         if self._model is None:
             from mlx_audio.tts.utils import load_model
 
-            self._model = load_model(self.cfg.kokoro_model)
+            from .mlxexec import run as mlx_run
+
+            self._model = mlx_run(load_model, self.cfg.kokoro_model)
         return self._model
 
     # -- interface -----------------------------------------------------
@@ -266,9 +271,13 @@ class KokoroTTS:
         try:
             model = self._ensure_model()
             with self._model_lock:
-                segments = list(model.generate(
+                from .mlxexec import run as mlx_run
+
+                # speak() is called from many short-lived threads; MLX work
+                # must stay on its one thread (streams are thread-bound)
+                segments = mlx_run(lambda: list(model.generate(
                     text, voice=self.cfg.kokoro_voice, speed=self.cfg.kokoro_speed,
-                ))
+                )))
             if not segments:
                 return None
             audio = np.concatenate([np.asarray(s.audio, dtype=np.float32) for s in segments])
