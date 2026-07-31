@@ -275,7 +275,7 @@ class Narrator:
             return None
         return self.grounder.screenshot(reader.pid, frame)
 
-    def _autopilot_click(self, description: str) -> bool:
+    def _autopilot_click(self, description: str, double: bool = False) -> bool:
         """Ground a described element in the pinned window and click it."""
         reader = self.reader
         if getattr(reader, "name", "") != "window":
@@ -287,10 +287,41 @@ class Narrator:
         if point is None:
             self._speak_aside(f"I couldn't find {description}.")
             return False
-        ok = self.injector.click(*point)
+        ok = self.injector.click(*point, count=2 if double else 1)
         if ok:
-            self._speak_aside(f"Clicking {description}.")
-            self.history.record("autopilot", f"clicked {description}",
+            verb = "Double-clicking" if double else "Clicking"
+            self._speak_aside(f"{verb} {description}.")
+            self.history.record("autopilot", f"{verb.lower()} {description}",
+                                source=_context_key(reader),
+                                target=self.autopilot.extra_app)
+        return ok
+
+    def _autopilot_key(self, spec: str) -> bool:
+        ok = self.injector.key(spec)
+        if ok:
+            self.history.record("autopilot", f"pressed {spec}",
+                                source=_context_key(self.reader),
+                                target=self.autopilot.extra_app)
+        return ok
+
+    def _autopilot_clear(self) -> bool:
+        ok = self.injector.clear_field()
+        if ok:
+            self.history.record("autopilot", "cleared the text field",
+                                source=_context_key(self.reader),
+                                target=self.autopilot.extra_app)
+        return ok
+
+    def _autopilot_scroll(self, direction: str) -> bool:
+        reader = self.reader
+        frame = getattr(reader, "frame_on_screen", lambda: None)()
+        if frame is None:
+            return False
+        x, y, w, h = frame
+        ok = self.injector.scroll(x + w / 2, y + h / 2,
+                                  5 if direction == "up" else -5)
+        if ok:
+            self.history.record("autopilot", f"scrolled {direction}",
                                 source=_context_key(reader),
                                 target=self.autopilot.extra_app)
         return ok
@@ -357,10 +388,13 @@ class Narrator:
         # and focuses that window first so the text lands in the right place
         self.autopilot.extra_app = label.split(" — ")[0].strip()
         self.autopilot.prepare = reader.focus
-        # window mode can also click: the grounding model finds the target
-        self.autopilot.click = (
-            self._autopilot_click
-            if self.cfg.computer_use and self.cfg.grounding_model else None)
+        # window mode can also drive the GUI: clicks (grounded by the vision
+        # model), keystrokes, field clears and scrolling
+        gui_on = self.cfg.computer_use and self.cfg.grounding_model
+        self.autopilot.click = self._autopilot_click if gui_on else None
+        self.autopilot.key = self._autopilot_key if gui_on else None
+        self.autopilot.clear = self._autopilot_clear if gui_on else None
+        self.autopilot.scroll = self._autopilot_scroll if gui_on else None
         self._speak_aside(f"Now narrating {label}.")
 
     def narrate_transcript(self) -> None:
@@ -371,6 +405,9 @@ class Narrator:
         self.autopilot.extra_app = ""
         self.autopilot.prepare = None
         self.autopilot.click = None
+        self.autopilot.key = None
+        self.autopilot.clear = None
+        self.autopilot.scroll = None
         self._speak_aside("Back to the Claude Code session.")
 
     def _on_window_key(self) -> None:
@@ -501,10 +538,11 @@ class Narrator:
         self._persist()
         # apply immediately if a window is pinned right now
         on_window = getattr(self.reader, "name", "") == "window"
-        self.autopilot.click = (
-            self._autopilot_click
-            if self.cfg.computer_use and self.cfg.grounding_model and on_window
-            else None)
+        gui_on = self.cfg.computer_use and self.cfg.grounding_model and on_window
+        self.autopilot.click = self._autopilot_click if gui_on else None
+        self.autopilot.key = self._autopilot_key if gui_on else None
+        self.autopilot.clear = self._autopilot_clear if gui_on else None
+        self.autopilot.scroll = self._autopilot_scroll if gui_on else None
         log.info("computer use %s", "on" if self.cfg.computer_use else "off")
         self._speak_aside("Computer use on. I can click in pinned windows."
                           if self.cfg.computer_use else "Computer use off.")
