@@ -81,6 +81,9 @@ def _parse_args(argv):
     p.add_argument("--voice", help="macOS voice name (say -v '?' to list)")
     p.add_argument("--rate", type=int, help="words per minute")
     p.add_argument("--model", dest="ollama_model", help="Ollama model for the filter")
+    p.add_argument("--autopilot-model", dest="autopilot_model",
+                   help="Ollama model that authors autopilot turns "
+                        "(default: the filter model; a bigger one drives better)")
     p.add_argument("--autopilot", action="store_true", default=None,
                    help="arm autopilot at startup (give the goal with --goal)")
     p.add_argument("--goal", dest="autopilot_goal",

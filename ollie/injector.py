@@ -82,7 +82,7 @@ class Injector:
             else:
                 self._paste(text)
             if do_enter:
-                time.sleep(0.05)
+                time.sleep(0.15)
                 self._tap(_KEY_RETURN, 0)
             return True
         except Exception as exc:
@@ -133,9 +133,11 @@ class Injector:
 
         down = CGEventCreateKeyboardEvent(None, keycode, True)
         up = CGEventCreateKeyboardEvent(None, keycode, False)
-        if flags:
-            CGEventSetFlags(down, flags)
-            CGEventSetFlags(up, flags)
+        # Always set the flags, including to zero: a fresh CGEvent inherits
+        # the *current* modifier state, so a Return synthesized right after
+        # our ⌘V goes out as ⌘-Return — which chat apps silently ignore.
+        CGEventSetFlags(down, flags)
+        CGEventSetFlags(up, flags)
         CGEventPost(kCGHIDEventTap, down)
         time.sleep(0.02)
         CGEventPost(kCGHIDEventTap, up)

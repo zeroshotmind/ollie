@@ -80,6 +80,7 @@ class Config:
     sample_rate: int = 16000
     hotkey: str = "right option"    # or "caps lock", "f13", "cmd_r" … see ollie/hotkey.py
     hotkey_mode: str = "hold"       # hold | toggle
+    window_hotkey: str = "right command"  # tap to narrate the focused window; again to go back
     max_record_seconds: float = 60.0
 
     # ---------- autopilot ----------

@@ -233,6 +233,9 @@ class OrbView(NSView):
         self._submenu(menu, "Tone", self._tone_items(cfg), "pickTone:")
 
         menu.addItem_(NSMenuItem.separatorItem())
+        self._submenu(menu, "Narrate", self._source_items(), "pickSource:")
+
+        menu.addItem_(NSMenuItem.separatorItem())
         self._add(menu, "Settings & dependencies…", "openReport:")
         self._add(menu, "Accessibility settings…", "openAccess:")
         self._add(menu, "Input Monitoring settings…", "openInput:")
@@ -274,6 +277,39 @@ class OrbView(NSView):
         if current and current not in names:
             names.insert(0, current)
         return [(name, name, name == current) for name in names]
+
+    @objc.python_method
+    def _source_items(self):
+        """What to narrate: the Claude Code transcript, or any open window —
+        picked the way video-call apps pick a window to share."""
+        reader = getattr(self.controller, "reader", None)
+        on_transcript = getattr(reader, "name", "") != "window"
+        pinned = (getattr(reader, "pid", None), getattr(reader, "window_index", None))
+        items = [("Claude Code session (default)", "claude", on_transcript)]
+        try:
+            from .readers.window import list_windows
+
+            for win in list_windows():
+                title = win["title"]
+                if len(title) > 46:
+                    title = title[:46] + "…"
+                label = f"{win['app']} — {title}"
+                value = f"{win['pid']}:{win['index']}:{label}"
+                checked = (win["pid"], win["index"]) == pinned
+                items.append((label, value, checked))
+        except Exception:
+            log.exception("could not list windows")
+        return items
+
+    def pickSource_(self, sender):
+        if self.controller is None:
+            return
+        value = sender.representedObject()
+        if value == "claude":
+            self.controller.narrate_transcript()
+            return
+        pid, index, label = value.split(":", 2)
+        self.controller.narrate_window(int(pid), int(index), label)
 
     @objc.python_method
     def _tone_items(self, cfg):
