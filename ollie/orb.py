@@ -249,6 +249,7 @@ class OrbView(NSView):
         self._submenu(menu, "Narrate", self._source_items(), "pickSource:")
 
         menu.addItem_(NSMenuItem.separatorItem())
+        self._add(menu, "History…", "openHistory:")
         self._add(menu, "Settings & dependencies…", "openReport:")
         self._add(menu, "Accessibility settings…", "openAccess:")
         self._add(menu, "Input Monitoring settings…", "openInput:")
@@ -402,6 +403,13 @@ class OrbView(NSView):
 
     def setStyleVerbatim_(self, sender):
         self._set_style("verbatim")
+
+    def openHistory_(self, sender):
+        import threading
+
+        from .history import open_page
+
+        threading.Thread(target=open_page, daemon=True).start()
 
     def openReport_(self, sender):
         import threading

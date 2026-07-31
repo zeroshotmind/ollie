@@ -14,6 +14,7 @@ import time
 from .config import Config
 from .autopilot import Autopilot
 from .filter import OllamaFilter
+from .history import History
 from .hotkey import PushToTalk, TapKey
 from .injector import Injector
 from .message import Chunk
@@ -52,11 +53,12 @@ class Narrator:
         self.tts = make_tts(cfg, self.state)
         self.stt = WhisperSTT(cfg, self.state)
         self.injector = Injector(cfg)
+        self.history = History(cfg)
         self.ptt = PushToTalk(cfg, self._on_talk_start, self._on_talk_stop)
         self.window_key = TapKey(cfg.window_hotkey, self._on_window_key)
         self.autopilot = Autopilot(
             cfg,
-            inject=lambda text: self.injector.inject(text, press_enter=True),
+            inject=self._autopilot_inject,
             speak=self._speak_aside,
             frontmost=_frontmost_app,
         )
@@ -140,6 +142,12 @@ class Narrator:
 
             if line:
                 log.info("speak: %s", line)
+                self.history.record(
+                    "narration", line,
+                    source=_context_key(self.reader),
+                    source_label=self.reader.describe(),
+                    muted=self.muted, style=self.cfg.style,
+                )
                 self.state.set(State.SPEAKING, line)
                 if self.muted:
                     # hold the caption on screen for a natural reading time
@@ -217,6 +225,8 @@ class Narrator:
             log.exception("recording failed")
             text = ""
         if text and self.autopilot.awaiting_goal:
+            self.history.record("speech", text, role="autopilot-goal",
+                                source=_context_key(self.reader))
             self.autopilot.set_goal(text)
             self.state.set(State.IDLE)
             return
@@ -224,6 +234,8 @@ class Narrator:
             target = _frontmost_app()
             if self.injector.inject(text):
                 log.info("injected into %s: %s", target, text)
+                self.history.record("speech", text, target=target,
+                                    source=_context_key(self.reader))
             else:
                 log.error("could not inject text — check Accessibility permission")
         else:
@@ -231,6 +243,14 @@ class Narrator:
         self.state.set(State.IDLE)
 
     # ------------------------------------------------------------------
+    def _autopilot_inject(self, text: str) -> bool:
+        ok = self.injector.inject(text, press_enter=True)
+        if ok:
+            self.history.record("autopilot", text,
+                                source=_context_key(self.reader),
+                                target=_frontmost_app())
+        return ok
+
     def _speak_aside(self, text: str) -> None:
         """Status lines from autopilot — spoken unless muted, never queued."""
         if self.muted:
@@ -301,6 +321,9 @@ class Narrator:
             log.exception("old reader did not stop cleanly")
         self._drain()          # drop queued chunks from the old source
         self.autopilot.reset_observations()
+        self.history.record("source", reader.describe(),
+                            source=_context_key(reader),
+                            source_label=reader.describe())
         log.info("reader: %s", reader.describe())
 
     def set_style(self, style: str) -> None:

@@ -101,6 +101,7 @@ class Config:
     # ---------- orb ----------
     orb: bool = True
     captions: bool = True           # show what Ollie says in a bubble by the orb
+    history_max_events: int = 2000  # trajectory cap in ~/.ollie/history.jsonl
     orb_size: int = 130
     orb_margin: int = 28
 
