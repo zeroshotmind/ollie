@@ -87,7 +87,9 @@ class Narrator:
         if self.ptt.start():
             self._spawn(self._watch_hotkey, "hotkey-watchdog")
         self.window_key.start()
-        self._spawn(self.check_models, "model-doctor")
+        # startup verifies only the always-needed core models; the heavy
+        # computer-use pair downloads lazily when that feature is engaged
+        self._spawn(lambda: self.check_models(computer_use=False), "model-doctor")
 
     def stop(self) -> None:
         self.state.stop()
@@ -420,6 +422,10 @@ class Narrator:
         self.autopilot.key = self._autopilot_key if gui_on else None
         self.autopilot.clear = self._autopilot_clear if gui_on else None
         self.autopilot.scroll = self._autopilot_scroll if gui_on else None
+        if gui_on:
+            # lazily fetch the vision/grounding weights the first time a
+            # window is actually pinned with computer use on
+            threading.Thread(target=self.check_models, daemon=True).start()
         self._speak_aside(f"Now watching {label}.")
 
     def narrate_transcript(self) -> None:
@@ -558,7 +564,8 @@ class Narrator:
         except Exception:
             log.debug("could not persist config change", exc_info=True)
 
-    def check_models(self, announce_ok: bool = False) -> None:
+    def check_models(self, announce_ok: bool = False,
+                     computer_use: bool | None = None) -> None:
         """Verify every configured model exists; download what's missing.
 
         Runs automatically at startup and from the orb menu. Progress lands
@@ -573,7 +580,7 @@ class Narrator:
         if not lock.acquire(blocking=False):
             return
         try:
-            missing = doctor.missing_models(self.cfg)
+            missing = doctor.missing_models(self.cfg, computer_use)
             if not missing:
                 if announce_ok:
                     self._speak_aside("All models are ready.")
@@ -610,6 +617,10 @@ class Narrator:
         log.info("computer use %s", "on" if self.cfg.computer_use else "off")
         self._speak_aside("Computer use on. I can click in pinned windows."
                           if self.cfg.computer_use else "Computer use off.")
+        if self.cfg.computer_use:
+            # the vision/grounding weights are deliberately not fetched at
+            # startup — engaging the feature is the download trigger
+            threading.Thread(target=self.check_models, daemon=True).start()
         return self.cfg.computer_use
 
     def toggle_captions(self) -> bool:

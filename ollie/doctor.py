@@ -42,12 +42,19 @@ def installed_models(cfg: Config) -> set[str]:
         return set()
 
 
-def required_models(cfg: Config) -> list[tuple[str, str]]:
-    """(model, what it is for) — deduplicated, order = user-facing priority."""
+def required_models(cfg: Config, computer_use: bool | None = None) -> list[tuple[str, str]]:
+    """(model, what it is for) — deduplicated, order = user-facing priority.
+
+    computer_use=False leaves out the heavy vision/grounding pair: they are
+    fetched lazily the moment the feature is actually engaged, never merely
+    because the config flag defaults to on at boot.
+    """
+    if computer_use is None:
+        computer_use = cfg.computer_use
     wanted: list[tuple[str, str]] = [(cfg.ollama_model, "narration filter")]
     if cfg.autopilot_model:
         wanted.append((cfg.autopilot_model, "autopilot"))
-    if cfg.computer_use and cfg.grounding_model:
+    if computer_use and cfg.grounding_model:
         wanted.append((cfg.grounding_model, "click grounding"))
         if cfg.autopilot_vision_model:
             wanted.append((cfg.autopilot_vision_model, "computer-use vision"))
@@ -60,14 +67,15 @@ def required_models(cfg: Config) -> list[tuple[str, str]]:
     return out
 
 
-def missing_models(cfg: Config) -> list[tuple[str, str]]:
+def missing_models(cfg: Config, computer_use: bool | None = None) -> list[tuple[str, str]]:
     have = installed_models(cfg)
     bare = {name.split(":")[0] for name in have}
 
     def present(name: str) -> bool:
         return name in have or (":" not in name and name in bare)
 
-    return [(name, why) for name, why in required_models(cfg) if not present(name)]
+    return [(name, why) for name, why in required_models(cfg, computer_use)
+            if not present(name)]
 
 
 def pull_model(cfg: Config, name: str, status: Callable[[str], None]) -> bool:
