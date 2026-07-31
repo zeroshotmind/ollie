@@ -218,6 +218,8 @@ class OrbView(NSView):
             else:
                 label = "Autopilot — arm (then speak the goal)"
             self._add(menu, label, "toggleAutopilot:")
+            if not pilot.enabled:
+                self._add(menu, "Autopilot — goal from file…", "pickGoalFile:")
         menu.addItem_(NSMenuItem.separatorItem())
 
         current = getattr(getattr(self.controller, "cfg", None), "style", "brief")
@@ -280,6 +282,27 @@ class OrbView(NSView):
     def toggleAutopilot_(self, sender):
         if self.controller is not None:
             self.controller.toggle_autopilot()
+
+    def pickGoalFile_(self, sender):
+        if self.controller is None:
+            return
+        from AppKit import NSApplication, NSOpenPanel
+
+        panel = NSOpenPanel.openPanel()
+        panel.setCanChooseDirectories_(False)
+        panel.setAllowsMultipleSelection_(False)
+        panel.setAllowedFileTypes_(["md", "markdown", "txt"])
+        panel.setMessage_("Choose a markdown file describing the autopilot goal")
+        # we are an accessory app: without activating, the panel opens behind
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        if panel.runModal() == 1 and panel.URLs():
+            path = str(panel.URLs()[0].path())
+            import threading
+
+            threading.Thread(
+                target=self.controller.arm_autopilot_from_file,
+                args=(path,), daemon=True,
+            ).start()
 
     @objc.python_method
     def _voice_items(self, cfg):

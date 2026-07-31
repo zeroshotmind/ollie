@@ -86,6 +86,7 @@ class Config:
     # ---------- autopilot ----------
     autopilot: bool = False
     autopilot_goal: str = ""
+    autopilot_goal_file: str = ""   # markdown file whose contents are the goal
     autopilot_max_turns: int = 15
     autopilot_idle: float = 75.0     # quiet seconds that count as end-of-turn
     autopilot_settle: float = 2.5    # wait after a turn ends before deciding
