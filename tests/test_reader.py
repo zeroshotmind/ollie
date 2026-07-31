@@ -384,3 +384,34 @@ def test_history_hides_error_events():
     assert "did a thing" in render(events)
     assert "Ollama exploded" not in render(events)
     assert "Ollama exploded" not in render_html(events)
+
+
+def test_doctor_required_and_missing():
+    from unittest.mock import patch
+
+    from ollie import doctor
+
+    cfg = Config.load({})
+    cfg.ollama_model = "qwen2.5:3b-instruct"
+    cfg.autopilot_model = "qwen3.5:9b"
+    cfg.computer_use = True
+    cfg.grounding_model = "ui-venus-8b"
+    cfg.autopilot_vision_model = "qwen3-vl:30b-a3b-instruct"
+
+    wanted = [name for name, _ in doctor.required_models(cfg)]
+    assert wanted == ["qwen2.5:3b-instruct", "qwen3.5:9b",
+                      "ui-venus-8b", "qwen3-vl:30b-a3b-instruct"]
+
+    # grounding models drop out when computer use is off
+    cfg.computer_use = False
+    assert [n for n, _ in doctor.required_models(cfg)] == \
+        ["qwen2.5:3b-instruct", "qwen3.5:9b"]
+    cfg.computer_use = True
+
+    # tagless names match any installed tag; ui-venus routes to the importer
+    with patch.object(doctor, "installed_models",
+                      return_value={"qwen2.5:3b-instruct", "qwen3.5:9b",
+                                    "ui-venus-8b:latest"}):
+        missing = doctor.missing_models(cfg)
+    assert missing == [("qwen3-vl:30b-a3b-instruct", "computer-use vision")]
+    assert "ui-venus-8b" in doctor.IMPORTERS
