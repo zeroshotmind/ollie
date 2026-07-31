@@ -506,6 +506,7 @@ class OrbView(NSView):
 
         menu.addItem_(NSMenuItem.separatorItem())
         self._add(menu, "History…", "openHistory:")
+        self._add(menu, "Check models & download missing…", "runDoctor:")
         self._add(menu, "Settings & dependencies…", "openReport:")
         self._add(menu, "Accessibility settings…", "openAccess:")
         self._add(menu, "Input Monitoring settings…", "openInput:")
@@ -732,6 +733,14 @@ class OrbView(NSView):
 
         cfg = getattr(self.controller, "cfg", None) or Config.load({})
         threading.Thread(target=open_report, args=(cfg,), daemon=True).start()
+
+    def runDoctor_(self, sender):
+        if self.controller is not None:
+            import threading
+
+            threading.Thread(
+                target=lambda: self.controller.check_models(announce_ok=True),
+                daemon=True).start()
 
     def openAccess_(self, sender):
         from .permissions import open_settings

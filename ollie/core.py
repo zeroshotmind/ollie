@@ -87,6 +87,7 @@ class Narrator:
         if self.ptt.start():
             self._spawn(self._watch_hotkey, "hotkey-watchdog")
         self.window_key.start()
+        self._spawn(self.check_models, "model-doctor")
 
     def stop(self) -> None:
         self.state.stop()
@@ -556,6 +557,45 @@ class Narrator:
             self.cfg.save()
         except Exception:
             log.debug("could not persist config change", exc_info=True)
+
+    def check_models(self, announce_ok: bool = False) -> None:
+        """Verify every configured model exists; download what's missing.
+
+        Runs automatically at startup and from the orb menu. Progress lands
+        in the caption bubble; failures use the error path. Serialised so a
+        menu click during the startup pass doesn't double-download.
+        """
+        from . import doctor
+
+        lock = getattr(self, "_doctor_lock", None)
+        if lock is None:
+            lock = self._doctor_lock = threading.Lock()
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            missing = doctor.missing_models(self.cfg)
+            if not missing:
+                if announce_ok:
+                    self._speak_aside("All models are ready.")
+                return
+            names = ", ".join(name for name, _ in missing)
+            self._speak_aside(
+                f"Setting up: {len(missing)} model"
+                f"{'s' if len(missing) > 1 else ''} to download — {names}. "
+                "I'll keep working meanwhile.")
+            for name, why in missing:
+                ok = doctor.acquire(
+                    self.cfg, name,
+                    lambda text: self.state.set(State.THINKING, text))
+                if ok:
+                    self._speak_aside(f"{name} is ready ({why}).")
+                else:
+                    self._show_error(f"Couldn't get {name} ({why}) — "
+                                     "see the log for details.")
+            if self.state.state is State.THINKING:
+                self.state.set(State.IDLE)
+        finally:
+            lock.release()
 
     def toggle_computer_use(self) -> bool:
         self.cfg.computer_use = not self.cfg.computer_use
