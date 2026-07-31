@@ -420,7 +420,7 @@ class Narrator:
         self.autopilot.key = self._autopilot_key if gui_on else None
         self.autopilot.clear = self._autopilot_clear if gui_on else None
         self.autopilot.scroll = self._autopilot_scroll if gui_on else None
-        self._speak_aside(f"Now narrating {label}.")
+        self._speak_aside(f"Now watching {label}.")
 
     def narrate_transcript(self) -> None:
         """Back to the default Claude Code transcript reader."""

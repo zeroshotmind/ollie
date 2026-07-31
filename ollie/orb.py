@@ -502,7 +502,7 @@ class OrbView(NSView):
                           "pickGroundingModel:")
 
         menu.addItem_(NSMenuItem.separatorItem())
-        self._submenu(menu, "Narrate", self._source_items(), "pickSource:")
+        self._submenu(menu, "Watch", self._source_items(), "pickSource:")
 
         menu.addItem_(NSMenuItem.separatorItem())
         self._add(menu, "History…", "openHistory:")
@@ -625,6 +625,11 @@ class OrbView(NSView):
                 items.append((label, value, checked))
         except Exception:
             log.exception("could not list windows")
+        if len(items) == 1:
+            # an empty window list is almost always a missing Accessibility
+            # grant — say so instead of showing a mysteriously bare menu
+            items.append(("No windows visible — grant Accessibility…",
+                          "grant-ax", False))
         return items
 
     @objc.python_method
@@ -662,6 +667,11 @@ class OrbView(NSView):
         value = sender.representedObject()
         if value == "claude":
             self.controller.narrate_transcript()
+            return
+        if value == "grant-ax":
+            from .permissions import open_settings
+
+            open_settings("accessibility")
             return
         pid, index, label = value.split(":", 2)
         self.controller.narrate_window(int(pid), int(index), label)
