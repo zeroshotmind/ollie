@@ -261,6 +261,31 @@ class WindowReader(Reader):
     def describe(self) -> str:
         return f"window reader — {self.label}"
 
+    def frame_on_screen(self) -> tuple[float, float, float, float] | None:
+        """The pinned window's (x, y, w, h) in AX coordinates (top-left
+        origin) — used to draw the selection border around it."""
+        if self._window is None:
+            return None
+        try:
+            point_type = getattr(AX, "kAXValueCGPointType", 1)
+            size_type = getattr(AX, "kAXValueCGSizeType", 2)
+            err, pos_val = AX.AXUIElementCopyAttributeValue(
+                self._window, AX.kAXPositionAttribute, None)
+            if err != 0:
+                return None
+            err, size_val = AX.AXUIElementCopyAttributeValue(
+                self._window, AX.kAXSizeAttribute, None)
+            if err != 0:
+                return None
+            ok_p, point = AX.AXValueGetValue(pos_val, point_type, None)
+            ok_s, size = AX.AXValueGetValue(size_val, size_type, None)
+            if not (ok_p and ok_s):
+                return None
+            return (float(point.x), float(point.y),
+                    float(size.width), float(size.height))
+        except Exception:
+            return None
+
     def focus(self) -> bool:
         """Bring the pinned window to the front so injection lands in it."""
         if self._window is None:
