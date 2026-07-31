@@ -626,10 +626,22 @@ class OrbView(NSView):
         except Exception:
             log.exception("could not list windows")
         if len(items) == 1:
-            # an empty window list is almost always a missing Accessibility
-            # grant — say so instead of showing a mysteriously bare menu
-            items.append(("No windows visible — grant Accessibility…",
-                          "grant-ax", False))
+            # An empty window list is an Accessibility problem — but there
+            # are two distinct ones, and the checkbox in Settings can lie:
+            # the grant is keyed to the app's signature when it was given,
+            # so a rebuilt Ollie shows "granted" yet is not trusted.
+            try:
+                from ApplicationServices import AXIsProcessTrusted
+
+                trusted = bool(AXIsProcessTrusted())
+            except Exception:
+                trusted = False
+            if trusted:
+                items.append(("No windows found — odd; see the log",
+                              "grant-ax", False))
+            else:
+                items.append(("Ollie isn't trusted — in Accessibility, remove "
+                              "Ollie (−) and re-add it…", "grant-ax", False))
         return items
 
     @objc.python_method
