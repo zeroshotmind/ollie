@@ -26,7 +26,22 @@ SETTINGS_PANES = {
     "microphone": "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
     "accessibility": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
     "input_monitoring": "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
+    "screen_recording": "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
 }
+
+
+def screen_recording_granted() -> bool:
+    """Whether this process may capture the screen (computer-use screenshots).
+
+    Quartz answers without prompting; CGRequestScreenCaptureAccess is the
+    call that raises the system dialog.
+    """
+    try:
+        from Quartz import CGPreflightScreenCaptureAccess
+
+        return bool(CGPreflightScreenCaptureAccess())
+    except Exception:
+        return False
 
 _IOHID_LISTEN = 1          # kIOHIDRequestTypeListenEvent
 

@@ -65,6 +65,7 @@ class Narrator:
             frontmost=_frontmost_app,
         )
         self.autopilot.status = self._autopilot_status
+        self.autopilot.error = self._show_error
         self.autopilot.window_shot = self._window_screenshot
         self.queue: queue.Queue[Chunk] = queue.Queue()
         self.muted = False
@@ -141,8 +142,9 @@ class Narrator:
             self.state.set(State.THINKING)
             try:
                 line = self.filter.process(batch)
-            except Exception:
+            except Exception as exc:
                 log.exception("filter failed")
+                self._show_error(f"Narration filter failed: {exc} — is Ollama running?")
                 line = None
 
             if line:
@@ -226,9 +228,12 @@ class Narrator:
         self.state.set(State.THINKING)
         try:
             text = self.stt.stop_recording()
-        except Exception:
+        except Exception as exc:
             log.exception("recording failed")
+            self._show_error(f"Recording failed: {exc}")
             text = ""
+        if not text and getattr(self.stt, "last_error", ""):
+            self._show_error(f"Transcription failed: {self.stt.last_error}")
         if text and self.autopilot.awaiting_goal:
             self.history.record("speech", text, role="autopilot-goal",
                                 source=_context_key(self.reader))
@@ -243,6 +248,8 @@ class Narrator:
                                     source=_context_key(self.reader))
             else:
                 log.error("could not inject text — check Accessibility permission")
+                self._show_error("Couldn't type into the app — "
+                                 "check the Accessibility permission.")
         else:
             log.info("nothing transcribed")
         self.state.set(State.IDLE)
@@ -325,6 +332,23 @@ class Narrator:
                                 source=_context_key(reader),
                                 target=self.autopilot.extra_app)
         return ok
+
+    def _show_error(self, text: str) -> None:
+        """Surface a failure in the caption bubble (never spoken). Recorded
+        with type "error", which the history views deliberately skip — the
+        trajectory stays about the conversation, not the plumbing."""
+        self.history.record("error", text, source=_context_key(self.reader))
+        if not self.cfg.captions:
+            return
+        label = f"⚠️ {text}"
+
+        def run() -> None:
+            self.state.set(State.THINKING, label)
+            time.sleep(min(6.0, 1.5 + 0.3 * len(text.split())))
+            if self.state.state is State.THINKING and self.state.label == label:
+                self.state.set(State.IDLE)
+
+        threading.Thread(target=run, daemon=True).start()
 
     def _speak_aside(self, text: str) -> None:
         """Status lines (source switches, autopilot) — spoken and captioned,

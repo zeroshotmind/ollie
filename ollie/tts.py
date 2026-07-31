@@ -226,8 +226,11 @@ class KokoroTTS:
 
             self._ensure_model()
             with self._model_lock:
-                mlx_run(lambda: list(
-                    self._model.generate("Ready.", voice=self.cfg.kokoro_voice)))
+                # consume the MLX-array segments on the MLX thread; nothing
+                # MLX-backed may leave it (see _generate)
+                mlx_run(lambda: sum(
+                    int(np.asarray(s.audio, dtype=np.float32).size)
+                    for s in self._model.generate("Ready.", voice=self.cfg.kokoro_voice)))
             log.info("kokoro ready (%s, voice %s)", self.cfg.kokoro_model, self.cfg.kokoro_voice)
         except Exception as exc:
             log.error("kokoro warmup failed (%s) — will fall back to `say`", exc)
@@ -274,14 +277,24 @@ class KokoroTTS:
                 from .mlxexec import run as mlx_run
 
                 # speak() is called from many short-lived threads; MLX work
-                # must stay on its one thread (streams are thread-bound)
-                segments = mlx_run(lambda: list(model.generate(
-                    text, voice=self.cfg.kokoro_voice, speed=self.cfg.kokoro_speed,
-                )))
-            if not segments:
-                return None
-            audio = np.concatenate([np.asarray(s.audio, dtype=np.float32) for s in segments])
-            if not audio.size:
+                # must stay on its one thread (streams are thread-bound).
+                # Crucially the numpy materialisation happens *inside* the
+                # closure too: the segments are MLX arrays, and np.asarray on
+                # another thread evaluates them there — that throws a C++
+                # std::runtime_error no Python handler can catch, killing the
+                # whole app. Only plain numpy ever leaves the MLX thread.
+                def synth():
+                    segments = list(model.generate(
+                        text, voice=self.cfg.kokoro_voice,
+                        speed=self.cfg.kokoro_speed,
+                    ))
+                    if not segments:
+                        return None
+                    return np.concatenate(
+                        [np.asarray(s.audio, dtype=np.float32) for s in segments])
+
+                audio = mlx_run(synth)
+            if audio is None or not audio.size:
                 return None
             # Kokoro masters quiet (~0.3 peak); bring it up to `say` levels so
             # volume does not jump between engines and the orb animates fully.
