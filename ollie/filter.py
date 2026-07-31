@@ -150,6 +150,17 @@ def clean_for_verbatim(text: str) -> str:
     return _WS.sub(" ", text).strip()
 
 
+def list_models(cfg: Config) -> list[str]:
+    """Model names the local Ollama has pulled (for the orb's model menus)."""
+    try:
+        response = httpx.get(f"{cfg.ollama_url}/api/tags", timeout=3.0)
+        response.raise_for_status()
+        names = [m.get("name", "") for m in response.json().get("models", [])]
+        return sorted(n for n in names if n)
+    except Exception:
+        return []
+
+
 class OllamaFilter:
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg

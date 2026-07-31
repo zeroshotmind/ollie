@@ -337,6 +337,23 @@ class Narrator:
             daemon=True,
         ).start()
 
+    def set_filter_model(self, model: str) -> None:
+        """Runtime switch of the narration filter model (read per request)."""
+        if not model or model == self.cfg.ollama_model:
+            return
+        self.cfg.ollama_model = model
+        self._persist()
+        log.info("filter model: %s", model)
+        self._speak_aside(f"Narration now filtered by {model.split(':')[0]}.")
+
+    def set_autopilot_model(self, model: str) -> None:
+        if not model or model == self.cfg.autopilot_model:
+            return
+        self.cfg.autopilot_model = model
+        self._persist()
+        log.info("autopilot model: %s", model)
+        self._speak_aside(f"Autopilot now driven by {model.split(':')[0]}.")
+
     def set_tone(self, tone: str) -> None:
         from .filter import TONES
 
