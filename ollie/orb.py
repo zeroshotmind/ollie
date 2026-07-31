@@ -587,6 +587,91 @@ class CaptionBubble:
         self.panel.setFrame_display_(NSMakeRect(x, y, self.WIDTH, height), True)
 
 
+class _BorderView(NSView):
+    """Glowing rounded border, drawn just inside the panel bounds."""
+
+    def isOpaque(self):
+        return False
+
+    def drawRect_(self, rect):
+        NSColor.clearColor().set()
+        NSBezierPath.fillRect_(rect)
+        bounds = self.bounds()
+        pulse = 0.72 + 0.28 * math.sin(time.time() * 2.4)
+        # widening, fading strokes make the glow; green = "this one is shared"
+        for width, alpha in ((10.0, 0.10), (6.5, 0.20), (3.5, 0.45), (1.8, 0.95)):
+            inset = width / 2.0 + 1.0
+            path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                NSMakeRect(bounds.origin.x + inset, bounds.origin.y + inset,
+                           bounds.size.width - 2 * inset,
+                           bounds.size.height - 2 * inset),
+                10.0, 10.0,
+            )
+            path.setLineWidth_(width)
+            _color((0.30, 0.86, 0.58), alpha * pulse).set()
+            path.stroke()
+
+
+class PinBorder:
+    """Follows the pinned window with a glowing border, like the highlight a
+    video-call app draws around the window being shared."""
+
+    def __init__(self) -> None:
+        self.panel = OrbWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(0, 0, 100, 100),
+            NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel,
+            NSBackingStoreBuffered,
+            False,
+        )
+        self.panel.setOpaque_(False)
+        self.panel.setBackgroundColor_(NSColor.clearColor())
+        self.panel.setHasShadow_(False)
+        self.panel.setLevel_(NSStatusWindowLevel)
+        self.panel.setCollectionBehavior_(
+            NSWindowCollectionBehaviorCanJoinAllSpaces
+            | NSWindowCollectionBehaviorStationary
+            | NSWindowCollectionBehaviorFullScreenAuxiliary
+        )
+        self.panel.setIgnoresMouseEvents_(True)
+        self.view = _BorderView.alloc().initWithFrame_(NSMakeRect(0, 0, 100, 100))
+        self.panel.setContentView_(self.view)
+        self._visible = False
+        self._pinned = None
+        self._shown_at = 0.0
+
+    SHOW_FOR = 3.0    # the glow confirms the pick, then gets out of the way
+
+    def update(self, reader) -> None:
+        frame = None
+        if getattr(reader, "name", "") == "window":
+            identity = (reader.pid, reader.window_index)
+            if identity != self._pinned:
+                self._pinned = identity
+                self._shown_at = time.time()
+            if time.time() - self._shown_at < self.SHOW_FOR:
+                frame = reader.frame_on_screen()
+        else:
+            self._pinned = None
+        if frame is None:
+            if self._visible:
+                self.panel.orderOut_(None)
+                self._visible = False
+            return
+        x, top_y, w, h = frame
+        # AX coordinates have a top-left origin on the primary display;
+        # Cocoa windows use bottom-left. Convert via the primary screen.
+        screens = NSScreen.screens()
+        primary_h = screens[0].frame().size.height if screens else 900.0
+        pad = 6.0
+        cocoa = NSMakeRect(x - pad, primary_h - (top_y + h) - pad,
+                           w + 2 * pad, h + 2 * pad)
+        self.panel.setFrame_display_(cocoa, True)
+        self.view.setNeedsDisplay_(True)
+        if not self._visible:
+            self.panel.orderFrontRegardless()
+            self._visible = True
+
+
 class OrbWindow(NSPanel):
     """A non-activating panel: clicking or dragging the orb must never move
     focus away from the terminal, or speech would be pasted into the wrong
@@ -636,12 +721,17 @@ def run_orb(state: AppState, size: int = 130, margin: int = 28, controller=None)
     window.orderFrontRegardless()
 
     bubble = CaptionBubble(window)
+    border = PinBorder()
+    tick = {"n": 0}
 
     def frame(_timer):
         view.setNeedsDisplay_(True)
         try:
             enabled = bool(getattr(getattr(controller, "cfg", None), "captions", True))
             bubble.update(state, enabled)
+            tick["n"] += 1
+            if tick["n"] % 3 == 0:      # AX frame reads at ~10 Hz is plenty
+                border.update(getattr(controller, "reader", None))
         except Exception:
             log.exception("caption bubble update failed")
 
