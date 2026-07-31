@@ -100,6 +100,7 @@ class Config:
 
     # ---------- orb ----------
     orb: bool = True
+    captions: bool = True           # show what Ollie says in a bubble by the orb
     orb_size: int = 130
     orb_margin: int = 28
 

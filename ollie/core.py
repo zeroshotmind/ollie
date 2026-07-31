@@ -125,7 +125,10 @@ class Narrator:
                 time.sleep(0.1)
                 batch.extend(self._drain())
 
-            if self.muted:
+            # Muting silences the voice only. With captions on, narration is
+            # still produced and shown in the bubble; with both off, skip the
+            # filter entirely.
+            if self.muted and not self.cfg.captions:
                 continue
 
             self.state.set(State.THINKING)
@@ -138,7 +141,11 @@ class Narrator:
             if line:
                 log.info("speak: %s", line)
                 self.state.set(State.SPEAKING, line)
-                self.tts.speak(line)
+                if self.muted:
+                    # hold the caption on screen for a natural reading time
+                    time.sleep(min(7.0, 1.2 + 0.3 * len(line.split())))
+                else:
+                    self.tts.speak(line)
 
             if self.state.state is not State.LISTENING:
                 self.state.set(State.IDLE)
@@ -368,6 +375,12 @@ class Narrator:
             self.cfg.save()
         except Exception:
             log.debug("could not persist config change", exc_info=True)
+
+    def toggle_captions(self) -> bool:
+        self.cfg.captions = not self.cfg.captions
+        self._persist()
+        log.info("captions %s", "on" if self.cfg.captions else "off")
+        return self.cfg.captions
 
     def toggle_mute(self) -> bool:
         self.muted = not self.muted

@@ -204,7 +204,10 @@ class OrbView(NSView):
         menu = NSMenu.alloc().initWithTitle_("Ollie")
 
         muted = bool(getattr(self.controller, "muted", False))
-        self._add(menu, "Unmute narration" if muted else "Mute narration", "toggleMute:")
+        self._add(menu, "Unmute voice" if muted else "Mute voice", "toggleMute:")
+        captions = bool(getattr(getattr(self.controller, "cfg", None), "captions", True))
+        item = self._add(menu, "Captions", "toggleCaptions:")
+        item.setState_(1 if captions else 0)
 
         pilot = getattr(self.controller, "autopilot", None)
         if pilot is not None:
@@ -268,6 +271,10 @@ class OrbView(NSView):
     def toggleMute_(self, sender):
         if self.controller is not None:
             self.controller.toggle_mute()
+
+    def toggleCaptions_(self, sender):
+        if self.controller is not None:
+            self.controller.toggle_captions()
 
     def toggleAutopilot_(self, sender):
         if self.controller is not None:
@@ -432,6 +439,123 @@ class OrbView(NSView):
         NSApplication.sharedApplication().terminate_(None)
 
 
+class _BubbleView(NSView):
+    """Rounded dark card behind the caption text."""
+
+    def isOpaque(self):
+        return False
+
+    def drawRect_(self, rect):
+        NSColor.clearColor().set()
+        NSBezierPath.fillRect_(rect)
+        card = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            self.bounds(), 13.0, 13.0
+        )
+        # glassy near-black with a violet cast, matching the speaking orb
+        gradient = NSGradient.alloc().initWithStartingColor_endingColor_(
+            NSColor.colorWithCalibratedRed_green_blue_alpha_(0.16, 0.13, 0.24, 0.96),
+            NSColor.colorWithCalibratedRed_green_blue_alpha_(0.08, 0.07, 0.13, 0.96),
+        )
+        gradient.drawInBezierPath_angle_(card, -90.0)
+        card.setLineWidth_(1.2)
+        NSColor.colorWithCalibratedRed_green_blue_alpha_(0.70, 0.48, 0.98, 0.55).set()
+        card.stroke()
+
+
+class CaptionBubble:
+    """A chat bubble beside the orb showing the line being spoken.
+
+    Managed from the orb's frame timer: appears when speaking starts (and
+    captions are enabled), lingers briefly, then fades away.
+    """
+
+    WIDTH = 300
+    PAD = 12
+    LINGER = 1.2      # seconds the bubble outlives the speech
+
+    def __init__(self, orb_window) -> None:
+        from AppKit import NSFont, NSTextField
+
+        self.orb_window = orb_window
+        self._last_label = ""
+        self._hide_at = 0.0
+
+        self.panel = OrbWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(0, 0, self.WIDTH, 60),
+            NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel,
+            NSBackingStoreBuffered,
+            False,
+        )
+        self.panel.setOpaque_(False)
+        self.panel.setBackgroundColor_(NSColor.clearColor())
+        self.panel.setHasShadow_(True)
+        self.panel.setLevel_(NSStatusWindowLevel)
+        self.panel.setCollectionBehavior_(
+            NSWindowCollectionBehaviorCanJoinAllSpaces
+            | NSWindowCollectionBehaviorStationary
+            | NSWindowCollectionBehaviorFullScreenAuxiliary
+        )
+        self.panel.setIgnoresMouseEvents_(True)
+
+        view = _BubbleView.alloc().initWithFrame_(NSMakeRect(0, 0, self.WIDTH, 60))
+        self.field = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(self.PAD, self.PAD, self.WIDTH - 2 * self.PAD, 36)
+        )
+        self.field.setEditable_(False)
+        self.field.setSelectable_(False)
+        self.field.setBezeled_(False)
+        self.field.setDrawsBackground_(False)
+        self.field.setFont_(NSFont.systemFontOfSize_(13.0))
+        self.field.setTextColor_(
+            NSColor.colorWithCalibratedRed_green_blue_alpha_(0.92, 0.93, 0.97, 1.0))
+        view.addSubview_(self.field)
+        self.panel.setContentView_(view)
+
+    def update(self, state, enabled: bool) -> None:
+        speaking = state.state is State.SPEAKING and bool(state.label)
+        if not enabled:
+            self._last_label = ""
+            self.panel.orderOut_(None)
+            return
+        if speaking:
+            self._hide_at = time.time() + self.LINGER
+            if state.label != self._last_label:
+                self._last_label = state.label
+                self._layout(state.label)
+            else:
+                self._position()      # follow the orb while it is dragged
+            self.panel.orderFrontRegardless()
+        elif time.time() > self._hide_at:
+            self._last_label = ""
+            self.panel.orderOut_(None)
+        elif self._last_label:
+            self._position()          # keep following during the linger too
+
+    def _layout(self, text: str) -> None:
+        text = text if len(text) <= 360 else text[:360] + "…"
+        self.field.setStringValue_(text)
+        inner = self.WIDTH - 2 * self.PAD
+        size = self.field.cell().cellSizeForBounds_(NSMakeRect(0, 0, inner, 800))
+        self._height = min(200.0, size.height) + 2 * self.PAD
+        self.field.setFrame_(NSMakeRect(self.PAD, self.PAD, inner, min(200.0, size.height)))
+        self._position()
+
+    def _position(self) -> None:
+        height = getattr(self, "_height", 60.0)
+        orb = self.orb_window.frame()
+        screen = self.orb_window.screen()
+        # The visible circle is much smaller than the orb window (radius
+        # ~0.40 of half the window, plus halo) — position against the circle,
+        # not the window edge, or the bubble floats disconnected in space.
+        cx = orb.origin.x + orb.size.width / 2.0
+        edge = orb.size.width / 2.0 * 0.52          # visible radius + breath
+        x = cx - edge - self.WIDTH - 4
+        if screen is not None and x < screen.visibleFrame().origin.x + 8:
+            x = cx + edge + 4                        # flip to the right side
+        y = orb.origin.y + (orb.size.height - height) / 2.0
+        self.panel.setFrame_display_(NSMakeRect(x, y, self.WIDTH, height), True)
+
+
 class OrbWindow(NSPanel):
     """A non-activating panel: clicking or dragging the orb must never move
     focus away from the terminal, or speech would be pasted into the wrong
@@ -480,9 +604,17 @@ def run_orb(state: AppState, size: int = 130, margin: int = 28, controller=None)
     window.setContentView_(view)
     window.orderFrontRegardless()
 
-    NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
-        1.0 / FPS, True, lambda _timer: view.setNeedsDisplay_(True)
-    )
+    bubble = CaptionBubble(window)
+
+    def frame(_timer):
+        view.setNeedsDisplay_(True)
+        try:
+            enabled = bool(getattr(getattr(controller, "cfg", None), "captions", True))
+            bubble.update(state, enabled)
+        except Exception:
+            log.exception("caption bubble update failed")
+
+    NSTimer.scheduledTimerWithTimeInterval_repeats_block_(1.0 / FPS, True, frame)
 
     def supervise(_timer):
         if not state.running:
