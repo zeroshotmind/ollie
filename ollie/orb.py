@@ -640,8 +640,8 @@ class OrbView(NSView):
                 items.append(("No windows found — odd; see the log",
                               "grant-ax", False))
             else:
-                items.append(("Ollie isn't trusted — in Accessibility, remove "
-                              "Ollie (−) and re-add it…", "grant-ax", False))
+                items.append(("Ollie isn't trusted — click to reset the stale "
+                              "grant and re-request it…", "grant-ax", False))
         return items
 
     @objc.python_method
@@ -681,9 +681,11 @@ class OrbView(NSView):
             self.controller.narrate_transcript()
             return
         if value == "grant-ax":
-            from .permissions import open_settings
+            import threading
 
-            open_settings("accessibility")
+            from .permissions import repair_accessibility
+
+            threading.Thread(target=repair_accessibility, daemon=True).start()
             return
         pid, index, label = value.split(":", 2)
         self.controller.narrate_window(int(pid), int(index), label)
@@ -765,9 +767,22 @@ class OrbView(NSView):
                 daemon=True).start()
 
     def openAccess_(self, sender):
-        from .permissions import open_settings
+        import threading
 
-        open_settings("accessibility")
+        from .permissions import open_settings, repair_accessibility
+
+        try:
+            from ApplicationServices import AXIsProcessTrusted
+
+            trusted = bool(AXIsProcessTrusted())
+        except Exception:
+            trusted = False
+        if trusted:
+            open_settings("accessibility")
+        else:
+            # the Settings checkbox may show "on" while the grant is keyed to
+            # a signature this build no longer has — reset and re-request
+            threading.Thread(target=repair_accessibility, daemon=True).start()
 
     def openMic_(self, sender):
         from .permissions import open_settings

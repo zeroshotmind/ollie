@@ -43,6 +43,61 @@ def screen_recording_granted() -> bool:
     except Exception:
         return False
 
+OLLIE_BUNDLE_ID = "com.swastikroy.ollie"
+
+
+def reset_accessibility(bundle_id: str = OLLIE_BUNDLE_ID) -> bool:
+    """Delete Ollie's Accessibility record from the TCC database.
+
+    Needed because the grant is keyed to the app's code signature at the
+    moment it was given. Ollie is ad-hoc signed, so any rebuild produces a
+    new signature: Settings still shows the checkbox on, but the grant is
+    dead and AXIsProcessTrusted() says False. There is no API to re-key it —
+    the only fix is to drop the stale row and let macOS ask again.
+    """
+    try:
+        proc = subprocess.run(
+            ["tccutil", "reset", "Accessibility", bundle_id],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode != 0:
+            log.warning("tccutil reset failed: %s", proc.stderr.strip()[:200])
+        return proc.returncode == 0
+    except Exception as exc:
+        log.warning("could not reset the Accessibility grant: %s", exc)
+        return False
+
+
+def request_accessibility() -> bool:
+    """Raise the system Accessibility prompt for this process.
+
+    Unlike merely opening the Settings pane, this makes macOS register the
+    *currently running* binary in the Accessibility list, so the row the user
+    enables actually matches the signature being checked.
+    """
+    try:
+        from ApplicationServices import (
+            AXIsProcessTrustedWithOptions,
+            kAXTrustedCheckOptionPrompt,
+        )
+
+        return bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True}))
+    except Exception as exc:
+        log.debug("cannot raise the Accessibility prompt: %s", exc)
+        return False
+
+
+def repair_accessibility() -> None:
+    """Full recovery from a stale grant: reset, re-prompt, open the pane.
+
+    The prompt only appears when no record exists, so the reset must come
+    first; the pane is opened regardless so the user can confirm the toggle.
+    """
+    reset_accessibility()
+    request_accessibility()
+    open_settings("accessibility")
+
+
 _IOHID_LISTEN = 1          # kIOHIDRequestTypeListenEvent
 
 
