@@ -231,6 +231,16 @@ class OrbView(NSView):
         ], "pickEngine:")
         self._submenu(menu, "Voice", self._voice_items(cfg), "pickVoice:")
         self._submenu(menu, "Tone", self._tone_items(cfg), "pickTone:")
+        models = self._model_names(cfg)
+        if models:
+            current_filter = getattr(cfg, "ollama_model", "")
+            current_pilot = getattr(cfg, "autopilot_model", "") or current_filter
+            self._submenu(menu, "Narration model",
+                          [(m, m, m == current_filter) for m in models],
+                          "pickFilterModel:")
+            self._submenu(menu, "Autopilot model",
+                          [(m, m, m == current_pilot) for m in models],
+                          "pickAutopilotModel:")
 
         menu.addItem_(NSMenuItem.separatorItem())
         self._submenu(menu, "Narrate", self._source_items(), "pickSource:")
@@ -300,6 +310,29 @@ class OrbView(NSView):
         except Exception:
             log.exception("could not list windows")
         return items
+
+    @objc.python_method
+    def _model_names(self, cfg):
+        """Installed Ollama models; cached briefly so the menu opens fast."""
+        import time as _time
+
+        cache = getattr(self, "_models_cache", None)
+        if cache and _time.time() - cache[0] < 30.0:
+            return cache[1]
+        from .config import Config
+        from .filter import list_models
+
+        names = list_models(cfg or Config.load({}))
+        self._models_cache = (_time.time(), names)
+        return names
+
+    def pickFilterModel_(self, sender):
+        if self.controller is not None:
+            self.controller.set_filter_model(sender.representedObject())
+
+    def pickAutopilotModel_(self, sender):
+        if self.controller is not None:
+            self.controller.set_autopilot_model(sender.representedObject())
 
     def pickSource_(self, sender):
         if self.controller is None:
