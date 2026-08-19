@@ -8,7 +8,7 @@ Not an autonomous agent — a speech-in / narration-out bridge.
 
 Currently speaks Claude Code on macOS, Apple Silicon.
 
-![orb states](docs/orb-states.png)
+![the orb in its four states](docs/orb.gif)
 
 ## How it works
 
@@ -325,8 +325,8 @@ uv pip install --python .venv/bin/python -e '.[dev]'
 .venv/bin/python -m pytest tests -q
 ```
 
-`scripts/render_orb.py` renders the four orb states to a PNG contact sheet
-offscreen — handy for tweaking the visuals without launching the app.
+`scripts/render_orb.py` renders the four orb states to the README's animated
+GIF offscreen — handy for tweaking the visuals without launching the app.
 
 ## Layout
 
