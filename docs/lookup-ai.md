@@ -1,0 +1,72 @@
+# Ask AI on selection (lookup-ai)
+
+[← back to the README](../README.md)
+
+A separate, small Electron app that lives at `lookup-ai/` in this repo: select
+text anywhere on your Mac, hit a shortcut, and ask an AI about it in a popup
+that appears where your cursor is. It has nothing to do with Ollie's voice
+loop — Ollie just starts it, stops it, and lets you configure it from one
+place instead of running two apps by hand.
+
+## Enable / disable
+
+On by default. Toggle it live from the orb menu → **Ask AI on selection**, or
+set `lookup_ai_enabled: false` in `~/.ollie/config.json`. Toggling persists;
+starting/stopping happens immediately, no restart needed.
+
+## Shortcut
+
+Default is **⌘E**. Change it with `lookup_ai_shortcut` in
+`~/.ollie/config.json` (Electron accelerator format, e.g.
+`"CommandOrControl+Shift+K"`) — Ollie passes it through as
+`LOOKUP_AI_SHORTCUT` when it launches the companion, so this is the one place
+to set it even though lookup-ai has its own Settings window too. A shortcut
+picked from lookup-ai's own Settings window persists there and overrides this
+for as long as that saved value exists — the env var only supplies a default.
+
+## Backends
+
+Configured per-backend in lookup-ai's own Settings window (right-click the
+lookup-ai tray icon → Settings), stored separately from Ollie's config since
+it's a different process:
+
+| Backend | Needs | Model picker | Effort picker |
+|---|---|---|---|
+| Claude CLI | `claude` on `PATH` | yes (`sonnet`/`opus`/`haiku`) | no |
+| Codex CLI | `codex` on `PATH` | yes | yes (`minimal`/`low`/`medium`/`high`, via `-c model_reasoning_effort`) |
+| Ollama | a running `ollama` server | yes | no |
+| OpenRouter | an API key (set in Settings) | yes | yes (`low`/`medium`/`high`, via the `reasoning.effort` field) |
+
+The popup only shows the model/effort dropdowns a backend actually defines.
+Your last choice per backend is remembered across popup opens. Edit the
+model/effort lists, or a CLI backend's flags, as JSON fields in Settings.
+
+## Troubleshooting
+
+**A CLI backend (Claude/Codex) fails with `spawn <command> ENOENT`** even
+though it works fine in your terminal: lookup-ai resolves CLI binaries via
+`$SHELL -ilc 'command -v <command>'` at call time, since a GUI-launched
+process (this one, started by Ollie or Finder/LaunchServices) gets a bare
+`PATH` with none of your shell customizations. This only works if the binary
+is actually on `PATH` inside an *interactive* shell — if you added it via
+something unusual (a `.bashrc` guarded by `[ -n "$PS1" ]`, a tool that only
+patches a non-login, non-interactive shell config), it may still not resolve.
+Confirm with `zsh -ilc 'command -v claude'` (or your shell) from a plain
+terminal; whatever that prints is what lookup-ai will try to run.
+
+**The popup doesn't appear on ⌘E**: check that lookup-ai's tray icon
+("AI" in the menu bar) is present — if Ollie's log
+(`~/.ollie/ollie.log`, filtered to `ollie.lookup_ai`) shows nothing, the
+companion never started, most likely because `lookup-ai/node_modules` isn't
+installed (see [Install](../README.md#install)). If it's present but the
+shortcut is unresponsive, another app may already be bound to that
+accelerator, or a stale lookup-ai process from a previous run is still
+holding it — quitting Ollie doesn't always reach a process that was force-
+killed rather than quit cleanly; check for and kill any leftover
+`.../lookup-ai/node_modules/electron/dist/Electron.app/.../Electron` process.
+
+**Selected text doesn't appear in the popup**: lookup-ai grabs it by
+simulating ⌘C and reading the clipboard, which needs Accessibility
+permission granted to the Electron process itself (a separate grant from
+Ollie's own, since it's a different app) — System Settings → Privacy &
+Security → Accessibility.

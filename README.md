@@ -32,8 +32,9 @@ Currently speaks Claude Code on macOS, Apple Silicon.
 ## Install
 
 Requirements: an Apple Silicon Mac, Python 3.10+, [uv](https://docs.astral.sh/uv)
-(`brew install uv`), and [Ollama](https://ollama.com) (`brew install ollama`)
-running with the filter model pulled.
+(`brew install uv`), [Ollama](https://ollama.com) (`brew install ollama`)
+running with the filter model pulled, and Node.js (`brew install node`) for
+the bundled [lookup-ai](docs/lookup-ai.md) companion.
 
 ```bash
 git clone <this repo> ollie && cd ollie      # or wherever you keep it
@@ -44,8 +45,13 @@ uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e .              # core
 uv pip install --python .venv/bin/python -e '.[kokoro]'    # + neural TTS (optional)
 
+(cd lookup-ai && npm install)                               # Ask AI on selection companion
+
 .venv/bin/python scripts/make_app.py --run                 # build + launch Ollie.app
 ```
+
+Skipping the `npm install` step isn't fatal — Ollie just logs a warning and
+runs without the [lookup-ai](docs/lookup-ai.md) companion until it's done.
 
 This builds `/Applications/Ollie.app` and launches it — the standard location,
 so it appears in the Privacy & Security permission pickers. Running it as an
@@ -73,6 +79,11 @@ the + button).
 Then **quit Ollie (right-click the orb) and relaunch once** — the key listener
 only picks up grants at startup.
 
+The [lookup-ai](docs/lookup-ai.md) companion is a separate app and needs its
+own Accessibility grant (to read your text selection) the first time you use
+**Ask AI on selection** — a second entry in the same System Settings list,
+easy to miss since it's not named "Ollie".
+
 Check them any time with `./run.sh --doctor`, or in the orb menu →
 **Permissions**, which shows each one's live status. The two differ on
 purpose: permissions belong to a *process*, so `--doctor` from a terminal
@@ -91,7 +102,12 @@ saying.
 **Orb:** drag it anywhere. Clicks outside the circle pass through to the window
 underneath, so it never gets in your way. Hover for the mute / autopilot /
 computer-use toggles; right-click for the full menu — style, voice, tone,
-models, permissions, and what to watch.
+microphone, models, permissions, and what to watch.
+
+**Ask AI on selection:** select text anywhere on your Mac, press **⌘E**, and
+ask an AI about it in a popup that appears at your cursor — a separate small
+app ([lookup-ai](docs/lookup-ai.md)) that Ollie starts and stops alongside
+itself. On by default; toggle from the orb menu.
 
 Ollie attaches to your most recently active Claude Code session and joins it at
 the tail, so it never replays history at you. Start a new session in any
@@ -103,6 +119,7 @@ other open window instead.
 | | |
 |---|---|
 | [Voice, tone and narration styles](docs/voice.md) | how much you hear, who says it, and how it's written |
+| [Ask AI on selection](docs/lookup-ai.md) | the bundled lookup-ai companion — shortcut, backends, models, troubleshooting |
 | [Autopilot](docs/autopilot.md) | let the local model drive the agent — and click, with computer use |
 | [Reference](docs/reference.md) | tuning flags, models, running from a terminal, tests, layout |
 | [Design notes](docs/design-notes.md) | why the launcher is a C program, and other things that fought back |

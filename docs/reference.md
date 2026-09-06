@@ -16,12 +16,20 @@ environment.
 | Different filter model | `--model llama3.2:3b` |
 | Different hotkey | `--hotkey "caps lock"`, `--hotkey f13`, `--hotkey-mode toggle` |
 | Find a working key | `./run.sh --test-hotkey` prints every key you press |
+| Different microphone | `--input-device "MacBook Pro Microphone"` (or the orb's **Microphone** submenu) |
+| List microphones | `./run.sh --list-input-devices` |
 | Type instead of paste | `OLLIE_INJECT_MODE=type` |
 | Better transcription | `OLLIE_WHISPER_REPO=mlx-community/whisper-small.en-mlx` |
 
 Hotkeys can be named the way they are printed on your keyboard — `"right
 option"`, `"option"`, `"right command"`, `"caps lock"`, `f13` — or by the
 internal names (`alt_r`, `cmd_r`) if you prefer.
+
+If push-to-talk transcribes nothing and `~/.ollie/ollie.log` shows `cannot
+open microphone: ... PaErrorCode -9986`, the system default input is likely a
+Bluetooth device (AirPods, etc.) mid-profile-switch — PortAudio's CoreAudio
+backend frequently fails to open those. Point `input_device` at a wired mic
+instead of leaving it on the system default.
 
 Useful knobs that have no flag: `batch_debounce` (how long events are gathered
 before one narration pass — raise it for fewer, denser sentences),
@@ -110,10 +118,12 @@ ollie/
   hotkey.py               global push-to-talk listener
   orb.py                  always-on-top transparent Cocoa window
   core.py                 the shared source-agnostic core loop
+  lookup_ai.py            starts/stops the lookup-ai companion subprocess
 scripts/
   make_app.py             build Ollie.app (bundle, icon, ad-hoc signature)
   launcher/main.c         the native launcher that gives the app its own TCC identity
   install_hook.py         register the Claude Code SessionStart hook
   session_hook.py         the hook itself
   render_orb.py           offscreen orb preview
+lookup-ai/                Electron app: select text, ask an AI — see docs/lookup-ai.md
 ```
