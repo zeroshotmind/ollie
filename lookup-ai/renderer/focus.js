@@ -1,11 +1,29 @@
 const hole = document.getElementById('hole');
 const hint = document.getElementById('hint');
 const dimensions = document.getElementById('dimensions');
+const darknessControl = document.getElementById('darknessControl');
+const darknessSlider = document.getElementById('darknessSlider');
 
 let dragging = false;
 let locked = false;
 let start = null;
 let rect = null; // {left, top, width, height} once a selection exists
+
+function applyDarkness(value) {
+  document.documentElement.style.setProperty('--darkness', value);
+}
+
+window.focusOverlay.getConfig().then(({ darkness }) => {
+  darknessSlider.value = darkness;
+  applyDarkness(darkness);
+});
+
+darknessSlider.addEventListener('input', () => {
+  applyDarkness(darknessSlider.value);
+});
+darknessSlider.addEventListener('change', () => {
+  window.focusOverlay.setDarkness(Number(darknessSlider.value));
+});
 
 function placeHole(left, top, width, height) {
   hole.style.left = `${left}px`;
@@ -37,6 +55,7 @@ function close() {
 }
 
 document.addEventListener('mousedown', (e) => {
+  if (e.target.closest('#darknessControl')) return; // let the slider handle its own drag
   if (locked) {
     if (isInside(e.clientX, e.clientY, rect)) return; // clicks inside the focused area are swallowed, not passed through
     close();
@@ -70,6 +89,7 @@ document.addEventListener('mouseup', (e) => {
   locked = true;
   hole.classList.add('locked');
   hint.classList.add('hidden');
+  darknessControl.hidden = false;
 });
 
 document.addEventListener('keydown', (e) => {

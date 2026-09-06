@@ -51,6 +51,9 @@ const store = new Store({
   defaults: {
     shortcut: 'CommandOrControl+E',
     focusShortcut: 'CommandOrControl+Shift+F',
+    // how dark the area outside the focus rectangle is, 0 (transparent) to
+    // 0.98 (nearly opaque) — adjustable live via the slider on the overlay
+    focusDarkness: 0.92,
     activeBackend: 'claude-cli',
     backends: DEFAULT_BACKENDS,
     // remembers the last model/effort picked per backend, across popup opens

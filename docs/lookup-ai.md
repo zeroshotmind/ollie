@@ -2,11 +2,11 @@
 
 [← back to the README](../README.md)
 
-A separate, small Electron app that lives at `lookup-ai/` in this repo: select
-text anywhere on your Mac, hit a shortcut, and ask an AI about it in a popup
-that appears where your cursor is. It has nothing to do with Ollie's voice
-loop — Ollie just starts it, stops it, and lets you configure it from one
-place instead of running two apps by hand.
+A separate, small Electron app that lives at `lookup-ai/` in this repo, with
+two features: select text anywhere and ask an AI about it, and dim everything
+but one part of the screen to focus on it. Neither has anything to do with
+Ollie's voice loop — Ollie just starts the app, stops it, and lets you
+configure it from one place instead of running two apps by hand.
 
 ## Enable / disable
 
@@ -23,6 +23,18 @@ Default is **⌘E**. Change it with `lookup_ai_shortcut` in
 to set it even though lookup-ai has its own Settings window too. A shortcut
 picked from lookup-ai's own Settings window persists there and overrides this
 for as long as that saved value exists — the env var only supplies a default.
+
+## Focus on screen area
+
+Default shortcut is **⌘⇧F** (change it in the same Settings window as the Ask
+AI shortcut). Drag a rectangle like the macOS screenshot tool; everything
+outside it dims. Click outside the rectangle, or press Esc, to dismiss —
+clicks inside it are swallowed, not passed through, so you can't accidentally
+interact with whatever's underneath while it's up.
+
+Once locked, a **Darkness** slider appears at the bottom of the screen —
+drag it live to adjust how dark the dimmed area is; your last value is
+remembered as the default next time (`focusDarkness` in the config, 0.2–0.98).
 
 ## Backends
 

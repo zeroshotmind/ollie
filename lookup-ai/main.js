@@ -251,6 +251,14 @@ ipcMain.handle('close-focus-overlay', () => {
   focusWindow?.close();
 });
 
+ipcMain.handle('get-focus-config', () => {
+  return { darkness: config.get('focusDarkness') };
+});
+
+ipcMain.handle('set-focus-darkness', (event, value) => {
+  config.set('focusDarkness', value);
+});
+
 ipcMain.handle('get-config', () => {
   return {
     shortcut: activeShortcut,

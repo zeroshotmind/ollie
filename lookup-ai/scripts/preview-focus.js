@@ -28,9 +28,15 @@ app.whenReady().then(async () => {
       nodeIntegration: false
     }
   });
+  let darkness = 0.92;
   ipcMain.handle('close-focus-overlay', () => {
     console.log('[main] close-focus-overlay invoked');
     win.close();
+  });
+  ipcMain.handle('get-focus-config', () => ({ darkness }));
+  ipcMain.handle('set-focus-darkness', (event, value) => {
+    darkness = value;
+    console.log('[main] darkness set to', value);
   });
   win.webContents.on('console-message', (e, level, message) => {
     console.log('[renderer]', message);
@@ -64,6 +70,19 @@ app.whenReady().then(async () => {
     send('mouseUp', 400, 350);
     await sleep(150);
     console.log('window still open after inside click:', !win.isDestroyed());
+
+    // drag the darkness slider (bottom-center) down to its minimum — should
+    // neither close the overlay nor start a selection drag
+    const sliderY = b1.height - 30;
+    const sliderX = b1.width / 2 - 40;
+    send('mouseDown', sliderX, sliderY);
+    send('mouseMove', sliderX - 60, sliderY);
+    send('mouseUp', sliderX - 60, sliderY);
+    await sleep(150);
+    console.log('window still open after slider drag:', !win.isDestroyed());
+
+    const out2 = process.argv[3] || '/tmp/focus-preview-slider.png';
+    require('child_process').execFileSync('screencapture', ['-x', '-R', `${b1.x},${b1.y},${b1.width},${b1.height}`, out2]);
 
     // click outside the locked rect (SHOULD close)
     send('mouseDown', 900, 100);

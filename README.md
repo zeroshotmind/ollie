@@ -107,7 +107,9 @@ microphone, models, permissions, and what to watch.
 **Ask AI on selection:** select text anywhere on your Mac, press **⌘E**, and
 ask an AI about it in a popup that appears at your cursor — a separate small
 app ([lookup-ai](docs/lookup-ai.md)) that Ollie starts and stops alongside
-itself. On by default; toggle from the orb menu.
+itself. On by default; toggle from the orb menu. The same app can also dim
+everything but one part of the screen: press **⌘⇧F** and drag a rectangle,
+like the macOS screenshot tool.
 
 Ollie attaches to your most recently active Claude Code session and joins it at
 the tail, so it never replays history at you. Start a new session in any
