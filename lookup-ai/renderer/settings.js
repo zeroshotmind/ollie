@@ -1,4 +1,5 @@
 const shortcutInput = document.getElementById('shortcut');
+const focusShortcutInput = document.getElementById('focusShortcut');
 const backendsList = document.getElementById('backendsList');
 const saveBtn = document.getElementById('saveBtn');
 const savedMsg = document.getElementById('savedMsg');
@@ -102,6 +103,7 @@ function renderBackend(id, cfg) {
 async function load() {
   const cfg = await window.lookupAI.getConfig();
   shortcutInput.value = cfg.shortcut;
+  focusShortcutInput.value = cfg.focusShortcut;
   currentBackends = cfg.backends;
   backendsList.innerHTML = '';
   Object.entries(currentBackends).forEach(([id, backendCfg]) => renderBackend(id, backendCfg));
@@ -133,7 +135,11 @@ function collectBackends() {
 
 saveBtn.addEventListener('click', async () => {
   const backends = collectBackends();
-  await window.lookupAI.saveConfig({ shortcut: shortcutInput.value.trim(), backends });
+  await window.lookupAI.saveConfig({
+    shortcut: shortcutInput.value.trim(),
+    focusShortcut: focusShortcutInput.value.trim(),
+    backends
+  });
   currentBackends = backends;
   savedMsg.hidden = false;
   setTimeout(() => (savedMsg.hidden = true), 1500);

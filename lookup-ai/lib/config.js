@@ -50,6 +50,7 @@ const store = new Store({
   name: 'config',
   defaults: {
     shortcut: 'CommandOrControl+E',
+    focusShortcut: 'CommandOrControl+Shift+F',
     activeBackend: 'claude-cli',
     backends: DEFAULT_BACKENDS,
     // remembers the last model/effort picked per backend, across popup opens

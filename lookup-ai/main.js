@@ -94,6 +94,53 @@ async function togglePopup() {
   });
 }
 
+let focusWindow = null;
+
+// Screen-focus overlay: drag out a rectangle (like the macOS screenshot
+// tool) and everything outside it dims, so you can concentrate on one part
+// of the screen. Click outside the rectangle, or press Esc, to dismiss.
+function toggleFocusOverlay() {
+  if (focusWindow) {
+    focusWindow.close();
+    return;
+  }
+
+  const cursor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursor);
+
+  focusWindow = new BrowserWindow({
+    x: display.bounds.x,
+    y: display.bounds.y,
+    width: display.bounds.width,
+    height: display.bounds.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    fullscreenable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'focus-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  focusWindow.setAlwaysOnTop(true, 'screen-saver');
+  focusWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  focusWindow.loadFile(path.join(__dirname, 'renderer', 'focus.html'));
+  focusWindow.once('ready-to-show', () => {
+    focusWindow?.show();
+    focusWindow?.focus();
+  });
+  focusWindow.on('closed', () => {
+    focusWindow = null;
+  });
+}
+
 function createSettingsWindow() {
   if (settingsWindow) {
     settingsWindow.show();
@@ -121,9 +168,12 @@ function createSettingsWindow() {
 // whatever the user has saved in Settings.
 let activeShortcut = process.env.LOOKUP_AI_SHORTCUT || config.get('shortcut');
 
+// Each shortcut is registered/unregistered individually rather than via
+// globalShortcut.unregisterAll(), since that would also wipe out the other
+// one (focus mode has its own accelerator, independent of this one).
 function registerShortcut(accelerator = activeShortcut, { persist = false } = {}) {
   const previous = activeShortcut;
-  globalShortcut.unregisterAll();
+  if (previous) globalShortcut.unregister(previous);
   const ok = globalShortcut.register(accelerator, togglePopup);
   if (!ok) {
     console.error(`Failed to register shortcut: ${accelerator}, reverting to ${previous}`);
@@ -135,9 +185,26 @@ function registerShortcut(accelerator = activeShortcut, { persist = false } = {}
   return { ok: true, active: accelerator };
 }
 
+let activeFocusShortcut = process.env.LOOKUP_AI_FOCUS_SHORTCUT || config.get('focusShortcut');
+
+function registerFocusShortcut(accelerator = activeFocusShortcut, { persist = false } = {}) {
+  const previous = activeFocusShortcut;
+  if (previous) globalShortcut.unregister(previous);
+  const ok = globalShortcut.register(accelerator, toggleFocusOverlay);
+  if (!ok) {
+    console.error(`Failed to register focus shortcut: ${accelerator}, reverting to ${previous}`);
+    globalShortcut.register(previous, toggleFocusOverlay);
+    return { ok: false, active: previous };
+  }
+  activeFocusShortcut = accelerator;
+  if (persist) config.set('focusShortcut', accelerator);
+  return { ok: true, active: accelerator };
+}
+
 function buildTrayMenu() {
   const menu = Menu.buildFromTemplate([
     { label: `Ask AI (${activeShortcut})`, click: togglePopup },
+    { label: `Focus on screen area (${activeFocusShortcut})`, click: toggleFocusOverlay },
     { label: 'Settings...', click: createSettingsWindow },
     { type: 'separator' },
     { label: 'Quit', role: 'quit' }
@@ -151,6 +218,7 @@ app.whenReady().then(() => {
   tray.setToolTip('Lookup AI');
   buildTrayMenu();
   registerShortcut();
+  registerFocusShortcut();
   createPopup();
 });
 
@@ -179,18 +247,26 @@ ipcMain.handle('hide-popup', () => {
   popup?.hide();
 });
 
+ipcMain.handle('close-focus-overlay', () => {
+  focusWindow?.close();
+});
+
 ipcMain.handle('get-config', () => {
   return {
     shortcut: activeShortcut,
+    focusShortcut: activeFocusShortcut,
     backends: config.get('backends'),
     activeBackend: config.get('activeBackend'),
     lastSelection: config.get('lastSelection')
   };
 });
 
-ipcMain.handle('save-config', (event, { shortcut, backends: newBackends }) => {
+ipcMain.handle('save-config', (event, { shortcut, focusShortcut, backends: newBackends }) => {
   if (newBackends) config.set('backends', newBackends);
   const result = shortcut ? registerShortcut(shortcut, { persist: true }) : { ok: true, active: activeShortcut };
+  const focusResult = focusShortcut
+    ? registerFocusShortcut(focusShortcut, { persist: true })
+    : { ok: true, active: activeFocusShortcut };
   buildTrayMenu();
-  return result;
+  return { ...result, focus: focusResult };
 });
