@@ -34,16 +34,10 @@ app.whenReady().then(() => {
     });
     win.show();
     win.webContents.executeJavaScript(`
-      document.getElementById('promptInput').value = 'Explain this in one sentence';
-      document.getElementById('response').hidden = false;
-      document.getElementById('response').innerHTML = marked.parse(
-        "**Bold**, *italic*, and \`code\`.\\n\\n- one\\n- two\\n\\n\`\`\`js\\nconsole.log(1)\\n\`\`\`\\n\\n$E=mc^2$"
-      );
-      if (window.renderMathInElement) {
-        renderMathInElement(document.getElementById('response'), {
-          delimiters: [{left:'$',right:'$',display:false}], throwOnError: false
-        });
-      }
+      addMessage('user', 'Explain this in one sentence');
+      addMessage('assistant', "**Bold**, *italic*, and \`code\`.\\n\\n- one\\n- two\\n\\n\`\`\`js\\nconsole.log(1)\\n\`\`\`\\n\\n$E=mc^2$");
+      addMessage('user', 'Now make it shorter');
+      document.getElementById('promptInput').value = 'What about a haiku instead?';
     `);
     win.setPosition(100, 100);
     setTimeout(() => {

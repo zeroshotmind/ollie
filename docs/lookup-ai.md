@@ -36,6 +36,17 @@ Once locked, a **Darkness** slider appears at the bottom of the screen —
 drag it live to adjust how dark the dimmed area is; your last value is
 remembered as the default next time (`focusDarkness` in the config, 0.2–0.98).
 
+## Multi-turn conversation
+
+Follow-up questions work: the response appears above the input box, which
+then stays put below it for the next question, and each answer builds on
+the prior turns in that same popup session. Every backend call is stateless
+under the hood — lookup-ai replays the conversation as plain text ahead of
+each new question — so this works uniformly across CLI, Ollama, and
+OpenRouter backends without needing backend-specific session support.
+Closing the popup (Esc, clicking outside, or hitting the shortcut again to
+toggle it closed) ends the session; reopening it starts a fresh one.
+
 ## Backends
 
 Configured per-backend in lookup-ai's own Settings window (right-click the

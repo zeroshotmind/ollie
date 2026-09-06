@@ -6,16 +6,17 @@ const selectedPreview = document.getElementById('selectedPreview');
 const promptInput = document.getElementById('promptInput');
 const submitBtn = document.getElementById('submitBtn');
 const statusEl = document.getElementById('status');
-const responseEl = document.getElementById('response');
+const conversationEl = document.getElementById('conversation');
 
 let currentSelectedText = '';
 let currentBackends = {};
 let lastSelection = {};
+let history = []; // [{role: 'user'|'assistant', text}] — this popup session's turns
 
-function renderResponse(markdownText) {
-  responseEl.innerHTML = marked.parse(markdownText);
+function renderMarkdown(el, markdownText) {
+  el.innerHTML = marked.parse(markdownText);
   if (window.renderMathInElement) {
-    renderMathInElement(responseEl, {
+    renderMathInElement(el, {
       delimiters: [
         { left: '$$', right: '$$', display: true },
         { left: '\\[', right: '\\]', display: true },
@@ -25,6 +26,36 @@ function renderResponse(markdownText) {
       throwOnError: false
     });
   }
+}
+
+function addMessage(role, text) {
+  const el = document.createElement('div');
+  el.className = `message ${role}`;
+  if (role === 'assistant') {
+    renderMarkdown(el, text);
+  } else {
+    el.textContent = text;
+  }
+  conversationEl.appendChild(el);
+  conversationEl.scrollTop = conversationEl.scrollHeight;
+  return el;
+}
+
+function resetConversation() {
+  history = [];
+  conversationEl.innerHTML = '';
+}
+
+// Every backend call is a fresh, stateless process/request, so multi-turn
+// context is carried by hand: replay prior turns as plain text ahead of the
+// new question. Selected text is only sent on turn one — askAI appends it to
+// the prompt itself, and it would otherwise be duplicated on every replay.
+function buildPromptForBackend(newPrompt) {
+  if (history.length === 0) return newPrompt;
+  const transcript = history
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
+    .join('\n\n');
+  return `${transcript}\n\nUser: ${newPrompt}`;
 }
 
 function populateBackends(backends, activeBackend) {
@@ -69,6 +100,7 @@ window.lookupAI.onSelection(({ text, error, backends, activeBackend, lastSelecti
   lastSelection = remembered || {};
   populateBackends(currentBackends, activeBackend);
   updateModelAndEffortOptions();
+  resetConversation(); // each time the popup opens is a fresh session
 
   if (error) {
     selectedPreview.textContent = error;
@@ -80,7 +112,6 @@ window.lookupAI.onSelection(({ text, error, backends, activeBackend, lastSelecti
     selectedPreview.hidden = true;
   }
 
-  responseEl.hidden = true;
   statusEl.hidden = true;
   promptInput.value = '';
   promptInput.focus();
@@ -93,25 +124,26 @@ async function submit() {
   submitBtn.disabled = true;
   statusEl.hidden = false;
   statusEl.textContent = 'Thinking...';
-  responseEl.hidden = true;
+  addMessage('user', prompt);
+  promptInput.value = '';
 
   try {
     const result = await window.lookupAI.askAI({
-      prompt,
-      selectedText: currentSelectedText,
+      prompt: buildPromptForBackend(prompt),
+      selectedText: history.length === 0 ? currentSelectedText : '',
       backendId: backendSelect.value,
       model: modelSelect.hidden ? undefined : modelSelect.value,
       effort: effortSelect.hidden ? undefined : effortSelect.value
     });
+    history.push({ role: 'user', text: prompt }, { role: 'assistant', text: result });
     statusEl.hidden = true;
-    responseEl.hidden = false;
-    renderResponse(result);
+    addMessage('assistant', result);
   } catch (err) {
     statusEl.hidden = true;
-    responseEl.hidden = false;
-    responseEl.textContent = `Error: ${err.message || err}`;
+    addMessage('assistant', `Error: ${err.message || err}`);
   } finally {
     submitBtn.disabled = false;
+    promptInput.focus();
   }
 }
 
