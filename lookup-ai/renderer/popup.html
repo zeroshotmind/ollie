@@ -7,19 +7,19 @@
 <link rel="stylesheet" href="vendor/katex.min.css" />
 </head>
 <body>
-  <div class="container">
-    <div class="drag-handle"></div>
-    <div class="header">
-      <div class="header-selects">
-        <select id="backend"></select>
-        <select id="model" hidden></select>
-        <select id="effort" hidden></select>
-      </div>
+  <div class="panel">
+    <div class="titlebar">
+      <span class="titlebar-label">Lookup AI</span>
       <button id="closeBtn" title="Close (Esc)">×</button>
     </div>
+    <div class="controls">
+      <select id="backend"></select>
+      <select id="model" hidden></select>
+      <select id="effort" hidden></select>
+    </div>
     <div id="selectedPreview" class="selected-preview" hidden></div>
-    <textarea id="promptInput" placeholder="Ask something..." rows="2"></textarea>
-    <button id="submitBtn">Ask (⏎)</button>
+    <textarea id="promptInput" placeholder="Ask something…" rows="2"></textarea>
+    <button id="submitBtn">Ask <span class="kbd">⏎</span></button>
     <div id="status" class="status" hidden></div>
     <div id="response" class="response" hidden></div>
   </div>

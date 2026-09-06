@@ -28,6 +28,12 @@ function createPopup() {
     resizable: true,
     alwaysOnTop: true,
     skipTaskbar: true,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: true,
+    vibrancy: 'popover',
+    visualEffectState: 'active',
+    roundedCorners: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
