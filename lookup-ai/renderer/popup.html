@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Lookup AI</title>
+<link rel="stylesheet" href="popup.css" />
+<link rel="stylesheet" href="vendor/katex.min.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="drag-handle"></div>
+    <div class="header">
+      <select id="backend"></select>
+      <button id="closeBtn" title="Close (Esc)">×</button>
+    </div>
+    <div id="selectedPreview" class="selected-preview" hidden></div>
+    <textarea id="promptInput" placeholder="Ask something..." rows="2"></textarea>
+    <button id="submitBtn">Ask (⏎)</button>
+    <div id="status" class="status" hidden></div>
+    <div id="response" class="response" hidden></div>
+  </div>
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/katex.min.js"></script>
+  <script src="vendor/auto-render.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

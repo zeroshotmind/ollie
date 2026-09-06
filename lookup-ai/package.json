@@ -1,0 +1,19 @@
+{
+  "name": "lookup-ai",
+  "version": "0.1.0",
+  "description": "Select text anywhere, hit a shortcut, ask an AI about it.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "node scripts/copy-vendor.js"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "katex": "^0.18.6",
+    "marked": "^18.0.11"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11"
+  }
+}

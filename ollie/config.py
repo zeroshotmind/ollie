@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 HOME = Path.home()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = HOME / ".ollie"
 CONFIG_PATH = STATE_DIR / "config.json"
 SESSION_HINT_PATH = STATE_DIR / "current_session.json"
@@ -47,11 +48,16 @@ class Config:
     speak_tool_results: bool = False
     speak_sidechains: bool = False
 
+    # Speak narration aloud at startup. Off by default: Ollie stays silent
+    # (captions still show, per the `captions` setting) until this — or the
+    # orb's mute toggle — is turned on, so nothing needs Ollama just to run.
+    narrate: bool = False
+
     # ---------- narration style ----------
-    # brief    — one terse line, routine steps skipped (default)
-    # full     — loss-less: every fact kept, several sentences allowed
-    # verbatim — the agent's own words, no model in the loop
-    style: str = "brief"
+    # brief    — one terse line, routine steps skipped; needs Ollama
+    # full     — loss-less: every fact kept, several sentences allowed; needs Ollama
+    # verbatim — the agent's own words, no model in the loop (default)
+    style: str = "verbatim"
 
     # How the narration is delivered (ignored by verbatim, which has no voice
     # of its own by definition): neutral | warm | snarky | minimal
@@ -116,6 +122,13 @@ class Config:
     history_max_events: int = 2000  # trajectory cap in ~/.ollie/history.jsonl
     orb_size: int = 130
     orb_margin: int = 28
+
+    # ---------- lookup-ai companion ----------
+    # Separate Electron app (select text anywhere, ask an AI about it).
+    # Ollie just starts/stops it alongside itself; see ollie/lookup_ai.py.
+    lookup_ai_enabled: bool = True
+    lookup_ai_path: str = str(PROJECT_ROOT / "lookup-ai")
+    lookup_ai_shortcut: str = "CommandOrControl+E"
 
     # ---------- misc ----------
     verbose: bool = False

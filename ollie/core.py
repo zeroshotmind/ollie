@@ -68,13 +68,17 @@ class Narrator:
         self.autopilot.error = self._show_error
         self.autopilot.window_shot = self._window_screenshot
         self.queue: queue.Queue[Chunk] = queue.Queue()
-        self.muted = False
+        self.muted = not cfg.narrate
         self._threads: list[threading.Thread] = []
+
+        from .lookup_ai import LookupAICompanion
+        self.lookup_ai = LookupAICompanion(cfg)
 
     # ------------------------------------------------------------------
     def start(self) -> None:
-        ok, message = self.filter.health()
-        log.info("%s", message)
+        if self.cfg.style in ("brief", "full"):
+            ok, message = self.filter.health()
+            log.info("%s", message)
 
         self.reader.start()
         log.info("reader: %s", self.reader.describe())
@@ -90,6 +94,7 @@ class Narrator:
         # startup verifies only the always-needed core models; the heavy
         # computer-use pair downloads lazily when that feature is engaged
         self._spawn(lambda: self.check_models(computer_use=False), "model-doctor")
+        self.lookup_ai.start()
 
     def stop(self) -> None:
         self.state.stop()
@@ -100,6 +105,7 @@ class Narrator:
         self.filter.close()
         self.autopilot.close()
         self.grounder.close()
+        self.lookup_ai.stop()
 
     def _spawn(self, target, name: str) -> None:
         thread = threading.Thread(target=target, name=name, daemon=True)
@@ -628,6 +634,16 @@ class Narrator:
         self._persist()
         log.info("captions %s", "on" if self.cfg.captions else "off")
         return self.cfg.captions
+
+    def toggle_lookup_ai(self) -> bool:
+        self.cfg.lookup_ai_enabled = not self.cfg.lookup_ai_enabled
+        self._persist()
+        if self.cfg.lookup_ai_enabled:
+            self.lookup_ai.start()
+        else:
+            self.lookup_ai.stop()
+        log.info("lookup-ai %s", "on" if self.cfg.lookup_ai_enabled else "off")
+        return self.cfg.lookup_ai_enabled
 
     def toggle_mute(self) -> bool:
         self.muted = not self.muted

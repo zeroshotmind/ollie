@@ -459,6 +459,12 @@ class OrbView(NSView):
         item = self._add(menu, "Computer use — let autopilot click", "toggleComputerUse:")
         item.setState_(1 if computer_use else 0)
 
+        lookup_cfg = getattr(self.controller, "cfg", None)
+        lookup_enabled = bool(getattr(lookup_cfg, "lookup_ai_enabled", True))
+        shortcut = getattr(lookup_cfg, "lookup_ai_shortcut", "CommandOrControl+E")
+        item = self._add(menu, f"Ask AI on selection ({shortcut})", "toggleLookupAI:")
+        item.setState_(1 if lookup_enabled else 0)
+
         pilot = getattr(self.controller, "autopilot", None)
         if pilot is not None:
             if pilot.enabled:
@@ -607,6 +613,10 @@ class OrbView(NSView):
     def toggleComputerUse_(self, sender):
         if self.controller is not None:
             self.controller.toggle_computer_use()
+
+    def toggleLookupAI_(self, sender):
+        if self.controller is not None:
+            self.controller.toggle_lookup_ai()
 
     def toggleAutopilot_(self, sender):
         if self.controller is not None:

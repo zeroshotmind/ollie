@@ -95,8 +95,13 @@ def _parse_args(argv):
     p.add_argument("--list-voices", action="store_true",
                    help="list installed narration voices and exit")
     p.add_argument("--style", choices=["brief", "full", "verbatim"],
-                   help="narration style: brief (terse), full (loss-less), "
-                        "verbatim (the agent's own words)")
+                   help="narration style: brief (terse, needs Ollama), "
+                        "full (loss-less, needs Ollama), "
+                        "verbatim (the agent's own words, default, no model needed)")
+    p.add_argument("--narrate", dest="narrate", action="store_true", default=None,
+                   help="speak narration aloud at startup (default: silent, captions only)")
+    p.add_argument("--mute", dest="narrate", action="store_false", default=None,
+                   help="stay silent at startup (default)")
     p.add_argument("--hotkey",
                    help="push-to-talk key, e.g. 'right option', 'caps lock', f13")
     p.add_argument("--hotkey-mode", dest="hotkey_mode", choices=["hold", "toggle"])

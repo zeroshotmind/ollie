@@ -386,13 +386,25 @@ def test_history_hides_error_events():
     assert "Ollama exploded" not in render_html(events)
 
 
+def test_doctor_requires_nothing_by_default():
+    from ollie import doctor
+
+    cfg = Config()  # dataclass defaults, bypassing any on-disk ~/.ollie/config.json
+    assert cfg.style == "verbatim"
+    assert cfg.narrate is False
+    assert cfg.autopilot is False
+    assert doctor.required_models(cfg) == []
+
+
 def test_doctor_required_and_missing():
     from unittest.mock import patch
 
     from ollie import doctor
 
     cfg = Config.load({})
+    cfg.style = "brief"
     cfg.ollama_model = "qwen2.5:3b-instruct"
+    cfg.autopilot = True
     cfg.autopilot_model = "qwen3.5:9b"
     cfg.computer_use = True
     cfg.grounding_model = "ui-venus-8b"
@@ -421,7 +433,9 @@ def test_doctor_startup_skips_computer_use_models():
     from ollie import doctor
 
     cfg = Config.load({})
+    cfg.style = "brief"
     cfg.ollama_model = "a"
+    cfg.autopilot = True
     cfg.autopilot_model = "b"
     cfg.computer_use = True          # flag on, but startup must not care
     cfg.grounding_model = "g"

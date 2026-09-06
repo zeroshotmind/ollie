@@ -1,0 +1,129 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  background: #1e1f22;
+  color: #e6e6e6;
+  font-size: 13px;
+}
+html, body {
+  height: 100%;
+}
+.container {
+  height: 100%;
+  padding: 10px;
+  padding-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+.drag-handle {
+  height: 18px;
+  margin: 0 -10px;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+select {
+  background: #2b2c30;
+  color: #e6e6e6;
+  border: 1px solid #3a3b3f;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+#closeBtn {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+.selected-preview {
+  background: #2b2c30;
+  border-radius: 6px;
+  padding: 6px 8px;
+  max-height: 70px;
+  overflow-y: auto;
+  color: #b7b7b7;
+  font-size: 12px;
+  white-space: pre-wrap;
+  -webkit-app-region: no-drag;
+}
+textarea {
+  background: #2b2c30;
+  color: #e6e6e6;
+  border: 1px solid #3a3b3f;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 13px;
+  resize: vertical;
+  -webkit-app-region: no-drag;
+}
+button#submitBtn {
+  background: #4f7cff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  -webkit-app-region: no-drag;
+}
+button#submitBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.status {
+  color: #999;
+  font-size: 12px;
+}
+.response {
+  background: #2b2c30;
+  border-radius: 6px;
+  padding: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+.response p { margin: 0 0 8px; }
+.response p:last-child { margin-bottom: 0; }
+.response pre {
+  background: #1a1b1e;
+  padding: 8px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.response code {
+  background: #1a1b1e;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.response pre code {
+  background: none;
+  padding: 0;
+}
+.response ul, .response ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.response blockquote {
+  border-left: 3px solid #4f7cff;
+  margin: 0 0 8px;
+  padding-left: 8px;
+  color: #b7b7b7;
+}
+.response a {
+  color: #7ba1ff;
+}
+.response h1, .response h2, .response h3 {
+  margin: 0 0 8px;
+}

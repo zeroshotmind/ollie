@@ -51,10 +51,12 @@ def required_models(cfg: Config, computer_use: bool | None = None) -> list[tuple
     """
     if computer_use is None:
         computer_use = cfg.computer_use
-    wanted: list[tuple[str, str]] = [(cfg.ollama_model, "narration filter")]
-    if cfg.autopilot_model:
-        wanted.append((cfg.autopilot_model, "autopilot"))
-    if computer_use and cfg.grounding_model:
+    wanted: list[tuple[str, str]] = []
+    if cfg.style in ("brief", "full"):
+        wanted.append((cfg.ollama_model, "narration filter"))
+    if cfg.autopilot:
+        wanted.append((cfg.autopilot_model or cfg.ollama_model, "autopilot"))
+    if cfg.autopilot and computer_use and cfg.grounding_model:
         wanted.append((cfg.grounding_model, "click grounding"))
         if cfg.autopilot_vision_model:
             wanted.append((cfg.autopilot_vision_model, "computer-use vision"))
