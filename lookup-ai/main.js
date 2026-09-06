@@ -83,7 +83,8 @@ async function togglePopup() {
     text: selectedText,
     error: selectionError,
     backends: config.get('backends'),
-    activeBackend: config.get('activeBackend')
+    activeBackend: config.get('activeBackend'),
+    lastSelection: config.get('lastSelection')
   });
 }
 
@@ -155,13 +156,14 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });
 
-ipcMain.handle('ask-ai', async (event, { prompt, selectedText, backendId }) => {
+ipcMain.handle('ask-ai', async (event, { prompt, selectedText, backendId, model, effort }) => {
   const backendConfig = config.get(`backends.${backendId}`);
   if (!backendConfig) throw new Error(`Unknown backend: ${backendId}`);
   config.set('activeBackend', backendId);
+  config.set(`lastSelection.${backendId}`, { model, effort });
   popupBusy = true;
   try {
-    return await backends.ask(backendId, backendConfig, prompt, selectedText);
+    return await backends.ask(backendId, backendConfig, prompt, selectedText, { model, effort });
   } finally {
     popupBusy = false;
   }
@@ -175,7 +177,8 @@ ipcMain.handle('get-config', () => {
   return {
     shortcut: activeShortcut,
     backends: config.get('backends'),
-    activeBackend: config.get('activeBackend')
+    activeBackend: config.get('activeBackend'),
+    lastSelection: config.get('lastSelection')
   };
 });
 

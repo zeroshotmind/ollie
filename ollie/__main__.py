@@ -79,6 +79,11 @@ def _parse_args(argv):
     p.add_argument("--engine", dest="tts_engine", choices=["say", "kokoro"],
                    help="TTS engine: say (instant, zero setup) or kokoro (neural)")
     p.add_argument("--voice", help="macOS voice name (say -v '?' to list)")
+    p.add_argument("--input-device", dest="input_device",
+                   help="microphone to record from (see --list-input-devices); "
+                        "empty/unset uses the system default")
+    p.add_argument("--list-input-devices", action="store_true",
+                   help="list available microphones and exit")
     p.add_argument("--rate", type=int, help="words per minute")
     p.add_argument("--model", dest="ollama_model", help="Ollama model for the filter")
     p.add_argument("--autopilot-model", dest="autopilot_model",
@@ -288,7 +293,7 @@ def main(argv=None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     overrides = {k: v for k, v in vars(args).items()
                  if k not in ("doctor", "list_sessions", "say", "test_hotkey",
-                              "list_voices", "settings", "history")
+                              "list_voices", "settings", "history", "list_input_devices")
                  and v is not None}
     cfg = Config.load(overrides)
     _setup_logging(cfg.verbose)
@@ -299,6 +304,16 @@ def main(argv=None) -> int:
             marker = "*" if name == cfg.voice else " "
             print(f"{marker} {name:28} {locale}")
         print("\nPreview one with:  ./run.sh --voice NAME --say 'hello there'")
+        return 0
+
+    if args.list_input_devices:
+        import sounddevice as sd
+        for d in sd.query_devices():
+            if d["max_input_channels"] > 0:
+                marker = "*" if d["name"] == cfg.input_device else " "
+                current = " (default)" if not cfg.input_device else ""
+                print(f"{marker} {d['name']}{current}")
+        print("\nUse one with:  ./run.sh --input-device 'NAME'")
         return 0
 
     if args.list_sessions:

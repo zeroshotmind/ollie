@@ -513,6 +513,13 @@ class Narrator:
         else:
             self._speak_aside("Switched to the system voice.")
 
+    def set_input_device(self, name: str) -> None:
+        if name == self.cfg.input_device:
+            return
+        self.cfg.input_device = name
+        self._persist()
+        log.info("input device: %s", name or "(system default)")
+
     def set_voice(self, voice: str) -> None:
         if self.cfg.tts_engine == "kokoro":
             self.cfg.kokoro_voice = voice

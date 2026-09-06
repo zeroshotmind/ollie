@@ -38,6 +38,26 @@ function renderBackend(id, cfg) {
     argsInput.value = JSON.stringify(cfg.args || []);
     argsInput.dataset.field = 'args';
     block.appendChild(fieldRow('Args (JSON array, {prompt} placeholder)', argsInput));
+
+    const modelFlagInput = document.createElement('input');
+    modelFlagInput.value = cfg.modelFlag || '';
+    modelFlagInput.dataset.field = 'modelFlag';
+    block.appendChild(fieldRow('Model flag (e.g. --model), blank to disable model picker', modelFlagInput));
+
+    const modelsInput = document.createElement('input');
+    modelsInput.value = JSON.stringify(cfg.models || []);
+    modelsInput.dataset.field = 'models';
+    block.appendChild(fieldRow('Models shown in the popup (JSON array)', modelsInput));
+
+    const effortLevelsInput = document.createElement('input');
+    effortLevelsInput.value = JSON.stringify(cfg.effortLevels || []);
+    effortLevelsInput.dataset.field = 'effortLevels';
+    block.appendChild(fieldRow('Effort levels shown in the popup (JSON array, blank to disable)', effortLevelsInput));
+
+    const effortArgsInput = document.createElement('input');
+    effortArgsInput.value = JSON.stringify(cfg.effortArgs || []);
+    effortArgsInput.dataset.field = 'effortArgs';
+    block.appendChild(fieldRow('Effort args (JSON array, {effort} placeholder)', effortArgsInput));
   } else if (cfg.type === 'ollama') {
     const hostInput = document.createElement('input');
     hostInput.value = cfg.host || '';
@@ -47,7 +67,12 @@ function renderBackend(id, cfg) {
     const modelInput = document.createElement('input');
     modelInput.value = cfg.model || '';
     modelInput.dataset.field = 'model';
-    block.appendChild(fieldRow('Model', modelInput));
+    block.appendChild(fieldRow('Default model', modelInput));
+
+    const modelsInput = document.createElement('input');
+    modelsInput.value = JSON.stringify(cfg.models || []);
+    modelsInput.dataset.field = 'models';
+    block.appendChild(fieldRow('Models shown in the popup (JSON array)', modelsInput));
   } else if (cfg.type === 'openrouter') {
     const keyInput = document.createElement('input');
     keyInput.type = 'password';
@@ -58,7 +83,17 @@ function renderBackend(id, cfg) {
     const modelInput = document.createElement('input');
     modelInput.value = cfg.model || '';
     modelInput.dataset.field = 'model';
-    block.appendChild(fieldRow('Model', modelInput));
+    block.appendChild(fieldRow('Default model', modelInput));
+
+    const modelsInput = document.createElement('input');
+    modelsInput.value = JSON.stringify(cfg.models || []);
+    modelsInput.dataset.field = 'models';
+    block.appendChild(fieldRow('Models shown in the popup (JSON array)', modelsInput));
+
+    const effortLevelsInput = document.createElement('input');
+    effortLevelsInput.value = JSON.stringify(cfg.effortLevels || []);
+    effortLevelsInput.dataset.field = 'effortLevels';
+    block.appendChild(fieldRow('Effort levels shown in the popup (JSON array, blank to disable)', effortLevelsInput));
   }
 
   backendsList.appendChild(block);
@@ -72,6 +107,8 @@ async function load() {
   Object.entries(currentBackends).forEach(([id, backendCfg]) => renderBackend(id, backendCfg));
 }
 
+const JSON_ARRAY_FIELDS = new Set(['args', 'models', 'effortLevels', 'effortArgs']);
+
 function collectBackends() {
   const updated = {};
   document.querySelectorAll('.backend-block').forEach((block) => {
@@ -79,11 +116,11 @@ function collectBackends() {
     const base = { ...currentBackends[id] };
     block.querySelectorAll('[data-field]').forEach((input) => {
       const field = input.dataset.field;
-      if (field === 'args') {
+      if (JSON_ARRAY_FIELDS.has(field)) {
         try {
-          base.args = JSON.parse(input.value);
+          base[field] = JSON.parse(input.value);
         } catch (e) {
-          // keep previous args if invalid JSON
+          // keep previous value if invalid JSON
         }
       } else {
         base[field] = input.value;

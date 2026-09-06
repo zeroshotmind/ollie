@@ -128,6 +128,12 @@ class OrbView(NSView):
                     from .tts import list_voices
 
                     self._voices_cache = (_time.time(), list_voices())
+                cache = getattr(self, "_input_devices_cache", None)
+                if not cache or now - cache[0] >= 30.0:
+                    import sounddevice as sd
+
+                    devices = [d["name"] for d in sd.query_devices() if d["max_input_channels"] > 0]
+                    self._input_devices_cache = (_time.time(), devices)
                 from .readers.window import list_windows
 
                 self._windows_cache = (_time.time(), list_windows())
@@ -505,6 +511,7 @@ class OrbView(NSView):
         ], "pickEngine:")
         self._submenu(menu, "Voice", self._voice_items(cfg), "pickVoice:")
         self._submenu(menu, "Tone", self._tone_items(cfg), "pickTone:")
+        self._submenu(menu, "Microphone", self._input_device_items(cfg), "pickInputDevice:")
 
         models = self._model_names(cfg)
         if models:
@@ -667,6 +674,25 @@ class OrbView(NSView):
         return [(name, name, name == current) for name in names]
 
     @objc.python_method
+    def _input_device_items(self, cfg):
+        current = getattr(cfg, "input_device", "")
+        cache = getattr(self, "_input_devices_cache", None)
+        if cache:
+            devices = cache[1]
+        else:                          # first open before any prefetch landed
+            import sounddevice as sd
+
+            devices = [d["name"] for d in sd.query_devices() if d["max_input_channels"] > 0]
+            import time as _time
+
+            self._input_devices_cache = (_time.time(), devices)
+        if current and current not in devices:
+            devices = [current] + devices
+        items = [("System default", "", current == "")]
+        items += [(name, name, name == current) for name in devices]
+        return items
+
+    @objc.python_method
     def _source_items(self):
         """What to narrate: the Claude Code transcript, or any open window —
         picked the way video-call apps pick a window to share."""
@@ -793,6 +819,10 @@ class OrbView(NSView):
     def pickTone_(self, sender):
         if self.controller is not None:
             self.controller.set_tone(sender.representedObject())
+
+    def pickInputDevice_(self, sender):
+        if self.controller is not None:
+            self.controller.set_input_device(sender.representedObject() or "")
 
     @objc.python_method
     def _set_style(self, style):

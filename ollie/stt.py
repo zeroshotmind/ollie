@@ -69,6 +69,23 @@ class WhisperSTT:
     def ready(self) -> bool:
         return self._ready.is_set()
 
+    def _resolve_device(self):
+        """Index of cfg.input_device in sd.query_devices(), or None for
+        whatever macOS currently calls its default input (empty setting, or
+        a saved name that no longer matches any connected device)."""
+        if not self.cfg.input_device:
+            return None
+        import sounddevice as sd
+
+        for i, d in enumerate(sd.query_devices()):
+            if d["name"] == self.cfg.input_device and d["max_input_channels"] > 0:
+                return i
+        log.warning(
+            "configured input device %r not found — falling back to the system default",
+            self.cfg.input_device,
+        )
+        return None
+
     def probe_microphone(self) -> str:
         """Ask for the microphone up front and report the real answer.
 
@@ -81,7 +98,9 @@ class WhisperSTT:
 
         status = request_microphone()
         try:
-            device = sd.query_devices(kind="input")["name"]
+            index = self._resolve_device()
+            device = sd.query_devices(index, kind="input")["name"] if index is not None \
+                else sd.query_devices(kind="input")["name"]
         except Exception:
             device = "?"
 
@@ -115,6 +134,7 @@ class WhisperSTT:
 
             try:
                 self._stream = sd.InputStream(
+                    device=self._resolve_device(),
                     samplerate=self.cfg.sample_rate,
                     channels=1,
                     dtype="float32",

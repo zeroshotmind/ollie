@@ -84,6 +84,10 @@ class Config:
     # ---------- stt ----------
     whisper_repo: str = "mlx-community/whisper-base.en-mlx"
     sample_rate: int = 16000
+    # Name of the sounddevice input to record from (matched against
+    # sd.query_devices() names). Empty string = whatever macOS calls its
+    # default input at the time — the previous, implicit behaviour.
+    input_device: str = ""
     hotkey: str = "right option"    # or "caps lock", "f13", "cmd_r" … see ollie/hotkey.py
     hotkey_mode: str = "hold"       # hold | toggle
     window_hotkey: str = "right command"  # tap to narrate the focused window; again to go back

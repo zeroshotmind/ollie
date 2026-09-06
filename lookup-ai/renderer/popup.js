@@ -1,4 +1,6 @@
 const backendSelect = document.getElementById('backend');
+const modelSelect = document.getElementById('model');
+const effortSelect = document.getElementById('effort');
 const closeBtn = document.getElementById('closeBtn');
 const selectedPreview = document.getElementById('selectedPreview');
 const promptInput = document.getElementById('promptInput');
@@ -7,6 +9,8 @@ const statusEl = document.getElementById('status');
 const responseEl = document.getElementById('response');
 
 let currentSelectedText = '';
+let currentBackends = {};
+let lastSelection = {};
 
 function renderResponse(markdownText) {
   responseEl.innerHTML = marked.parse(markdownText);
@@ -34,9 +38,37 @@ function populateBackends(backends, activeBackend) {
   backendSelect.value = activeBackend;
 }
 
-window.lookupAI.onSelection(({ text, error, backends, activeBackend }) => {
+function fillSelect(selectEl, values, remembered) {
+  selectEl.innerHTML = '';
+  if (!values || values.length === 0) {
+    selectEl.hidden = true;
+    return;
+  }
+  values.forEach((v) => {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    selectEl.appendChild(opt);
+  });
+  selectEl.value = values.includes(remembered) ? remembered : values[0];
+  selectEl.hidden = false;
+}
+
+function updateModelAndEffortOptions() {
+  const cfg = currentBackends[backendSelect.value] || {};
+  const remembered = lastSelection[backendSelect.value] || {};
+  fillSelect(modelSelect, cfg.models, remembered.model);
+  fillSelect(effortSelect, cfg.effortLevels, remembered.effort);
+}
+
+backendSelect.addEventListener('change', updateModelAndEffortOptions);
+
+window.lookupAI.onSelection(({ text, error, backends, activeBackend, lastSelection: remembered }) => {
   currentSelectedText = text || '';
-  populateBackends(backends, activeBackend);
+  currentBackends = backends || {};
+  lastSelection = remembered || {};
+  populateBackends(currentBackends, activeBackend);
+  updateModelAndEffortOptions();
 
   if (error) {
     selectedPreview.textContent = error;
@@ -67,7 +99,9 @@ async function submit() {
     const result = await window.lookupAI.askAI({
       prompt,
       selectedText: currentSelectedText,
-      backendId: backendSelect.value
+      backendId: backendSelect.value,
+      model: modelSelect.hidden ? undefined : modelSelect.value,
+      effort: effortSelect.hidden ? undefined : effortSelect.value
     });
     statusEl.hidden = true;
     responseEl.hidden = false;

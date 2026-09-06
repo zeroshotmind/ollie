@@ -26,10 +26,18 @@ function buildPrompt(userPrompt, selectedText) {
   return `${userPrompt}\n\n---\nSelected text:\n${selectedText}`;
 }
 
-async function runCli(command, argsTemplate, fullPrompt) {
-  const resolved = await resolveCommand(command);
+async function runCli(backendConfig, fullPrompt, { model, effort } = {}) {
+  const resolved = await resolveCommand(backendConfig.command);
   return new Promise((resolve, reject) => {
-    const args = argsTemplate.map((a) => (a === '{prompt}' ? fullPrompt : a));
+    const args = backendConfig.args.map((a) => (a === '{prompt}' ? fullPrompt : a));
+
+    if (model && model !== '(default)' && backendConfig.modelFlag) {
+      args.push(backendConfig.modelFlag, model);
+    }
+    if (effort && backendConfig.effortArgs) {
+      args.push(...backendConfig.effortArgs.map((a) => a.replace('{effort}', effort)));
+    }
+
     const child = spawn(resolved, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
 
     let stdout = '';
@@ -38,12 +46,12 @@ async function runCli(command, argsTemplate, fullPrompt) {
     child.stderr.on('data', (d) => (stderr += d.toString()));
 
     child.on('error', (err) => {
-      reject(new Error(`Failed to launch "${command}": ${err.message}`));
+      reject(new Error(`Failed to launch "${backendConfig.command}": ${err.message}`));
     });
 
     child.on('close', (code) => {
       if (code !== 0 && !stdout.trim()) {
-        reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
+        reject(new Error(stderr.trim() || `${backendConfig.command} exited with code ${code}`));
       } else {
         resolve(stdout.trim() || stderr.trim());
       }
@@ -92,10 +100,10 @@ function postJson(urlString, body, headers = {}) {
   });
 }
 
-async function runOllama(backendConfig, fullPrompt) {
+async function runOllama(backendConfig, fullPrompt, { model } = {}) {
   const url = `${backendConfig.host.replace(/\/$/, '')}/api/generate`;
   const json = await postJson(url, {
-    model: backendConfig.model,
+    model: model || backendConfig.model,
     prompt: fullPrompt,
     stream: false
   });
@@ -103,16 +111,19 @@ async function runOllama(backendConfig, fullPrompt) {
   return json.response || JSON.stringify(json);
 }
 
-async function runOpenRouter(backendConfig, fullPrompt) {
+async function runOpenRouter(backendConfig, fullPrompt, { model, effort } = {}) {
   if (!backendConfig.apiKey) {
     throw new Error('OpenRouter API key is not set. Add it in Settings.');
   }
+  const body = {
+    model: model || backendConfig.model,
+    messages: [{ role: 'user', content: fullPrompt }]
+  };
+  if (effort) body.reasoning = { effort };
+
   const json = await postJson(
     'https://openrouter.ai/api/v1/chat/completions',
-    {
-      model: backendConfig.model,
-      messages: [{ role: 'user', content: fullPrompt }]
-    },
+    body,
     { Authorization: `Bearer ${backendConfig.apiKey}` }
   );
   if (typeof json === 'string') return json;
@@ -120,16 +131,16 @@ async function runOpenRouter(backendConfig, fullPrompt) {
   return choice?.message?.content || JSON.stringify(json);
 }
 
-async function ask(backendId, backendConfig, userPrompt, selectedText) {
+async function ask(backendId, backendConfig, userPrompt, selectedText, options = {}) {
   const fullPrompt = buildPrompt(userPrompt, selectedText);
 
   switch (backendConfig.type) {
     case 'cli':
-      return runCli(backendConfig.command, backendConfig.args, fullPrompt);
+      return runCli(backendConfig, fullPrompt, options);
     case 'ollama':
-      return runOllama(backendConfig, fullPrompt);
+      return runOllama(backendConfig, fullPrompt, options);
     case 'openrouter':
-      return runOpenRouter(backendConfig, fullPrompt);
+      return runOpenRouter(backendConfig, fullPrompt, options);
     default:
       throw new Error(`Unknown backend type: ${backendConfig.type}`);
   }

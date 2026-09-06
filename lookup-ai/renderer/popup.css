@@ -28,6 +28,16 @@ html, body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
+}
+.header-selects {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.header-selects select {
+  max-width: 150px;
 }
 select {
   background: #2b2c30;
