@@ -6,15 +6,22 @@ const resolvedCommandCache = new Map();
 
 // A packaged/GUI-launched app doesn't inherit the user's shell PATH, so
 // `spawn('claude', ...)` can ENOENT even though the CLI works fine in a
-// terminal. Resolve the binary once via a login shell and cache the result.
+// terminal. Resolve the binary once via the user's shell and cache the
+// result. This has to be an *interactive* login shell (-ilc, not -lc):
+// zsh only sources .zshrc for interactive shells, and that's commonly
+// where tools like nvm, pyenv, or ~/.local/bin get added to PATH — a
+// plain login shell (-lc) sources .zprofile/.zlogin only and misses them.
 function resolveCommand(command) {
   if (command.includes('/')) return Promise.resolve(command);
   if (resolvedCommandCache.has(command)) return Promise.resolve(resolvedCommandCache.get(command));
 
   const shell = process.env.SHELL || '/bin/zsh';
   return new Promise((resolve) => {
-    execFile(shell, ['-lc', `command -v ${command}`], (err, stdout) => {
-      const resolved = !err && stdout.trim() ? stdout.trim() : command;
+    execFile(shell, ['-ilc', `command -v ${command}`], (err, stdout) => {
+      // Interactive rc files can print banners/noise before the real answer,
+      // so take the last non-empty line rather than the whole trimmed blob.
+      const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+      const resolved = !err && lines.length ? lines[lines.length - 1] : command;
       resolvedCommandCache.set(command, resolved);
       resolve(resolved);
     });
