@@ -22,6 +22,9 @@ input, select {
   font-size: 11px;
   margin: 4px 0 0;
 }
+.hint.error {
+  color: #c0392b;
+}
 .backend-block {
   border: 1px solid #ddd;
   border-radius: 8px;

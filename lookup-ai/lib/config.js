@@ -1,4 +1,17 @@
 const Store = require('electron-store');
+const fs = require('fs');
+const { app } = require('electron');
+const path = require('path');
+
+// electron-store writes its resolved defaults to disk on first access, so by
+// the time the Store below exists, `config.json` always has a `shortcut` key
+// — there's no way afterwards to tell "the user saved this on purpose" apart
+// from "this is just the default no one ever touched". Capture that
+// distinction here, before construction, while it's still knowable: a
+// launcher's environment-variable default (see main.js) should only seed a
+// genuinely fresh install, never override a value the user already saved.
+const configPath = path.join(app.getPath('userData'), 'config.json');
+const isFreshInstall = !fs.existsSync(configPath);
 
 const DEFAULT_BACKENDS = {
   'claude-cli': {
@@ -104,5 +117,7 @@ store.saveHistorySession = function saveHistorySession(session) {
   const updated = [session, ...withoutThis].slice(0, HISTORY_LIMIT);
   store.set('history', updated);
 };
+
+store.isFreshInstall = isFreshInstall;
 
 module.exports = store;

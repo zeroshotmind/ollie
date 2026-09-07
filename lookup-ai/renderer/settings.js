@@ -135,14 +135,35 @@ function collectBackends() {
 
 saveBtn.addEventListener('click', async () => {
   const backends = collectBackends();
-  await window.lookupAI.saveConfig({
-    shortcut: shortcutInput.value.trim(),
-    focusShortcut: focusShortcutInput.value.trim(),
+  const attemptedShortcut = shortcutInput.value.trim();
+  const attemptedFocusShortcut = focusShortcutInput.value.trim();
+  const result = await window.lookupAI.saveConfig({
+    shortcut: attemptedShortcut,
+    focusShortcut: attemptedFocusShortcut,
     backends
   });
   currentBackends = backends;
-  savedMsg.hidden = false;
-  setTimeout(() => (savedMsg.hidden = true), 1500);
+
+  // A shortcut that's already claimed by another app fails to register and
+  // silently reverts — reflect the accelerator actually in effect either way,
+  // so this can't look saved when it wasn't.
+  shortcutInput.value = result.active;
+  focusShortcutInput.value = result.focus.active;
+
+  const problems = [];
+  if (!result.ok) problems.push(`Ask AI shortcut "${attemptedShortcut}" is already in use elsewhere — kept "${result.active}".`);
+  if (!result.focus.ok) problems.push(`Focus shortcut "${attemptedFocusShortcut}" is already in use elsewhere — kept "${result.focus.active}".`);
+
+  if (problems.length) {
+    savedMsg.textContent = problems.join(' ');
+    savedMsg.classList.add('error');
+    savedMsg.hidden = false;
+  } else {
+    savedMsg.textContent = 'Saved.';
+    savedMsg.classList.remove('error');
+    savedMsg.hidden = false;
+    setTimeout(() => (savedMsg.hidden = true), 1500);
+  }
 });
 
 load();

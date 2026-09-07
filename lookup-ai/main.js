@@ -164,9 +164,10 @@ function createSettingsWindow() {
 }
 
 // LOOKUP_AI_SHORTCUT lets a launcher (e.g. Ollie, which starts this app as a
-// companion process) pick the accelerator for this run without overwriting
-// whatever the user has saved in Settings.
-let activeShortcut = process.env.LOOKUP_AI_SHORTCUT || config.get('shortcut');
+// companion process) seed the accelerator on a genuinely fresh install only
+// — every launch after that, whatever the user saved in Settings wins, even
+// if the launcher passes the same env var again (as Ollie always does).
+let activeShortcut = (config.isFreshInstall && process.env.LOOKUP_AI_SHORTCUT) || config.get('shortcut');
 
 // Each shortcut is registered/unregistered individually rather than via
 // globalShortcut.unregisterAll(), since that would also wipe out the other
@@ -185,7 +186,8 @@ function registerShortcut(accelerator = activeShortcut, { persist = false } = {}
   return { ok: true, active: accelerator };
 }
 
-let activeFocusShortcut = process.env.LOOKUP_AI_FOCUS_SHORTCUT || config.get('focusShortcut');
+let activeFocusShortcut =
+  (config.isFreshInstall && process.env.LOOKUP_AI_FOCUS_SHORTCUT) || config.get('focusShortcut');
 
 function registerFocusShortcut(accelerator = activeFocusShortcut, { persist = false } = {}) {
   const previous = activeFocusShortcut;

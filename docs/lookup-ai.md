@@ -16,13 +16,15 @@ starting/stopping happens immediately, no restart needed.
 
 ## Shortcut
 
-Default is **⌘E**. Change it with `lookup_ai_shortcut` in
-`~/.ollie/config.json` (Electron accelerator format, e.g.
-`"CommandOrControl+Shift+K"`) — Ollie passes it through as
-`LOOKUP_AI_SHORTCUT` when it launches the companion, so this is the one place
-to set it even though lookup-ai has its own Settings window too. A shortcut
-picked from lookup-ai's own Settings window persists there and overrides this
-for as long as that saved value exists — the env var only supplies a default.
+Default is **⌘E**. Set it from lookup-ai's own Settings window — that's the
+one place that actually matters. `lookup_ai_shortcut` in
+`~/.ollie/config.json` only seeds the accelerator on a brand-new install
+(passed through as `LOOKUP_AI_SHORTCUT`); once lookup-ai has ever saved a
+shortcut of its own, that saved value wins on every future launch, even
+though Ollie keeps passing its own config's value as the env var every time
+it starts the companion. Ollie's copy is otherwise just a label — it's shown
+in the orb menu's "Ask AI on selection (...)" text, so update it there too
+if you want that label accurate, but it's cosmetic only.
 
 ## Focus on screen area
 
@@ -76,6 +78,18 @@ Your last choice per backend is remembered across popup opens. Edit the
 model/effort lists, or a CLI backend's flags, as JSON fields in Settings.
 
 ## Troubleshooting
+
+**A shortcut you saved in Settings doesn't do anything, and pressing it
+instead seems to trigger something in whatever app is frontmost** (e.g. a
+browser's own keybinding): that means the accelerator was never actually
+registered by lookup-ai, so macOS delivered the keypress straight through to
+whatever app was in front. The most likely cause is another app (or macOS
+itself) already owns that exact key combination — Settings now shows an
+error naming which accelerator failed and which one is still active when
+this happens; try a different combination. If Settings doesn't show an
+error but the shortcut still silently doesn't fire, check the value in
+`~/Library/Application Support/lookup-ai/config.json` matches what you meant
+to save.
 
 **A CLI backend (Claude/Codex) fails with `spawn <command> ENOENT`** even
 though it works fine in your terminal: lookup-ai resolves CLI binaries via
