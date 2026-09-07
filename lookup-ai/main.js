@@ -278,3 +278,13 @@ ipcMain.handle('save-config', (event, { shortcut, focusShortcut, backends: newBa
   buildTrayMenu();
   return { ...result, focus: focusResult };
 });
+
+ipcMain.handle('get-history', () => config.get('history'));
+
+ipcMain.handle('save-history-session', (event, session) => {
+  config.saveHistorySession(session);
+});
+
+ipcMain.handle('clear-history', () => {
+  config.set('history', []);
+});

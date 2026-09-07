@@ -47,6 +47,17 @@ OpenRouter backends without needing backend-specific session support.
 Closing the popup (Esc, clicking outside, or hitting the shortcut again to
 toggle it closed) ends the session; reopening it starts a fresh one.
 
+## History
+
+The last 30 sessions persist across popup closes — the clock icon next to
+the close button opens a panel listing them (title, relative time, backend
+used); clicking one reloads its full conversation and lets you keep going
+where you left off. A session is saved after its first successful answer,
+not only on close, so closing the popup by accident never loses one that
+already got a reply. **Clear** in the history panel wipes all of it.
+Sessions are stored in the same config file as everything else
+(`~/Library/Application Support/lookup-ai/config.json`, key `history`).
+
 ## Backends
 
 Configured per-backend in lookup-ai's own Settings window (right-click the

@@ -57,9 +57,14 @@ const store = new Store({
     activeBackend: 'claude-cli',
     backends: DEFAULT_BACKENDS,
     // remembers the last model/effort picked per backend, across popup opens
-    lastSelection: {}
+    lastSelection: {},
+    // past chat sessions, newest first, capped at HISTORY_LIMIT — see
+    // ipcMain 'save-history-session' in main.js
+    history: []
   }
 });
+
+const HISTORY_LIMIT = 30;
 
 // electron-store's `defaults` only fill in keys that are missing from the
 // store *entirely* — once `backends` exists on disk (from before this field
@@ -88,5 +93,16 @@ function backfillBackendDefaults() {
 }
 
 backfillBackendDefaults();
+
+// Upserts a session by id (moving it to the front) and trims to
+// HISTORY_LIMIT, evicting the oldest. Called after every successful turn
+// rather than only on close, so an accidentally-closed popup never loses
+// a conversation that already got at least one answer.
+store.saveHistorySession = function saveHistorySession(session) {
+  const history = store.get('history') || [];
+  const withoutThis = history.filter((s) => s.id !== session.id);
+  const updated = [session, ...withoutThis].slice(0, HISTORY_LIMIT);
+  store.set('history', updated);
+};
 
 module.exports = store;

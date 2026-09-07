@@ -2,6 +2,10 @@ const backendSelect = document.getElementById('backend');
 const modelSelect = document.getElementById('model');
 const effortSelect = document.getElementById('effort');
 const closeBtn = document.getElementById('closeBtn');
+const historyBtn = document.getElementById('historyBtn');
+const historyPanel = document.getElementById('historyPanel');
+const historyList = document.getElementById('historyList');
+const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 const selectedPreview = document.getElementById('selectedPreview');
 const promptInput = document.getElementById('promptInput');
 const submitBtn = document.getElementById('submitBtn');
@@ -11,7 +15,9 @@ const conversationEl = document.getElementById('conversation');
 let currentSelectedText = '';
 let currentBackends = {};
 let lastSelection = {};
-let history = []; // [{role: 'user'|'assistant', text}] — this popup session's turns
+let history = []; // [{role: 'user'|'assistant', text}] — this session's turns
+let sessionId = null;
+let sessionStartedAt = null;
 
 function renderMarkdown(el, markdownText) {
   el.innerHTML = marked.parse(markdownText);
@@ -41,8 +47,10 @@ function addMessage(role, text) {
   return el;
 }
 
-function resetConversation() {
+function startNewSession() {
   history = [];
+  sessionId = crypto.randomUUID();
+  sessionStartedAt = Date.now();
   conversationEl.innerHTML = '';
 }
 
@@ -56,6 +64,20 @@ function buildPromptForBackend(newPrompt) {
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
     .join('\n\n');
   return `${transcript}\n\nUser: ${newPrompt}`;
+}
+
+// Persisted after every successful turn (not just on close) so an
+// accidentally-closed popup never loses a conversation that already has an
+// answer in it.
+function persistSession() {
+  window.lookupAI.saveHistorySession({
+    id: sessionId,
+    backendId: backendSelect.value,
+    startedAt: sessionStartedAt,
+    updatedAt: Date.now(),
+    title: history[0]?.text.slice(0, 80) || '',
+    messages: history
+  });
 }
 
 function populateBackends(backends, activeBackend) {
@@ -100,7 +122,8 @@ window.lookupAI.onSelection(({ text, error, backends, activeBackend, lastSelecti
   lastSelection = remembered || {};
   populateBackends(currentBackends, activeBackend);
   updateModelAndEffortOptions();
-  resetConversation(); // each time the popup opens is a fresh session
+  startNewSession();
+  closeHistoryPanel();
 
   if (error) {
     selectedPreview.textContent = error;
@@ -138,6 +161,7 @@ async function submit() {
     history.push({ role: 'user', text: prompt }, { role: 'assistant', text: result });
     statusEl.hidden = true;
     addMessage('assistant', result);
+    persistSession();
   } catch (err) {
     statusEl.hidden = true;
     addMessage('assistant', `Error: ${err.message || err}`);
@@ -157,6 +181,91 @@ promptInput.addEventListener('keydown', (e) => {
   }
 });
 
+// ---------------- History panel ----------------
+
+function relativeTime(ms) {
+  const diff = Date.now() - ms;
+  const min = Math.round(diff / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  return `${day}d ago`;
+}
+
+function closeHistoryPanel() {
+  historyPanel.hidden = true;
+  historyBtn.classList.remove('active');
+}
+
+async function toggleHistoryPanel() {
+  if (!historyPanel.hidden) {
+    closeHistoryPanel();
+    return;
+  }
+  const sessions = (await window.lookupAI.getHistory()) || [];
+  historyList.innerHTML = '';
+  if (sessions.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'history-empty';
+    empty.textContent = 'No past chats yet';
+    historyList.appendChild(empty);
+  } else {
+    sessions.forEach((session) => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+
+      const title = document.createElement('div');
+      title.className = 'history-item-title';
+      title.textContent = session.title || '(untitled)';
+
+      const meta = document.createElement('div');
+      meta.className = 'history-item-meta';
+      const backendLabel = currentBackends[session.backendId]?.label || session.backendId;
+      meta.textContent = `${relativeTime(session.updatedAt)} · ${backendLabel}`;
+
+      item.appendChild(title);
+      item.appendChild(meta);
+      item.addEventListener('click', () => loadSession(session));
+      historyList.appendChild(item);
+    });
+  }
+  historyPanel.hidden = false;
+  historyBtn.classList.add('active');
+}
+
+function loadSession(session) {
+  history = session.messages.slice();
+  sessionId = session.id;
+  sessionStartedAt = session.startedAt;
+  conversationEl.innerHTML = '';
+  history.forEach((m) => addMessage(m.role, m.text));
+
+  if (currentBackends[session.backendId]) {
+    backendSelect.value = session.backendId;
+    updateModelAndEffortOptions();
+  }
+
+  selectedPreview.hidden = true; // stale relative to this restored session
+  closeHistoryPanel();
+  promptInput.value = '';
+  promptInput.focus();
+}
+
+historyBtn.addEventListener('click', toggleHistoryPanel);
+
+clearHistoryBtn.addEventListener('click', async () => {
+  await window.lookupAI.clearHistory();
+  closeHistoryPanel();
+});
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') window.lookupAI.hidePopup();
+  if (e.key === 'Escape') {
+    if (!historyPanel.hidden) {
+      closeHistoryPanel();
+    } else {
+      window.lookupAI.hidePopup();
+    }
+  }
 });
