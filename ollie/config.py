@@ -92,6 +92,9 @@ class Config:
     hotkey_mode: str = "hold"       # hold | toggle
     window_hotkey: str = "right command"  # tap to narrate the focused window; again to go back
     max_record_seconds: float = 60.0
+    # Words Whisper keeps mishearing, one per line; "wrong -> right" lines are
+    # fixed after transcription. See ollie/vocabulary.py for the format.
+    vocabulary_file: str = str(STATE_DIR / "vocabulary.txt")
 
     # ---------- autopilot ----------
     autopilot: bool = False

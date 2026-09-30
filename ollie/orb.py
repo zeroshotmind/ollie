@@ -512,6 +512,7 @@ class OrbView(NSView):
         self._submenu(menu, "Voice", self._voice_items(cfg), "pickVoice:")
         self._submenu(menu, "Tone", self._tone_items(cfg), "pickTone:")
         self._submenu(menu, "Microphone", self._input_device_items(cfg), "pickInputDevice:")
+        self._add(menu, "Custom words…", "openVocabulary:")
 
         models = self._model_names(cfg)
         if models:
@@ -921,6 +922,16 @@ class OrbView(NSView):
         from .config import LOG_PATH
 
         subprocess.Popen(["open", "-t", str(LOG_PATH)])
+
+    def openVocabulary_(self, sender):
+        import subprocess
+
+        from .config import Config
+        from .vocabulary import VocabularyFile
+
+        cfg = getattr(self.controller, "cfg", None) or Config.load()
+        path = VocabularyFile(cfg.vocabulary_file).ensure_exists()
+        subprocess.Popen(["open", "-t", str(path)])
 
     def quitOllie_(self, sender):
         self.app_state.stop()

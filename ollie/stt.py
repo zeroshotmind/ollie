@@ -16,6 +16,7 @@ import numpy as np
 
 from .config import Config
 from .state import AppState
+from .vocabulary import VocabularyFile, apply_replacements, build_prompt
 
 log = logging.getLogger("ollie.stt")
 
@@ -41,6 +42,7 @@ class WhisperSTT:
         self._ready = threading.Event()
         self.last_error = ""     # why the last transcription returned nothing
         self._mlx = None
+        self.vocabulary = VocabularyFile(cfg.vocabulary_file)
 
     # ------------------------------------------------------------------
     def warmup(self) -> None:
@@ -208,6 +210,7 @@ class WhisperSTT:
                 return ""
         started = time.time()
         self.last_error = ""
+        vocab = self.vocabulary.get()
         try:
             from .mlxexec import run as mlx_run
 
@@ -221,6 +224,10 @@ class WhisperSTT:
                 language="en",
                 verbose=None,
                 condition_on_previous_text=False,
+                # Biases toward the user's words. With condition_on_previous_text
+                # off it only covers the first 30s window; the replacement
+                # rules below still apply to all of it.
+                initial_prompt=build_prompt(vocab),
             )
         except Exception as exc:
             log.error("transcription failed: %s", exc)
@@ -231,6 +238,11 @@ class WhisperSTT:
                  audio.size / self.cfg.sample_rate, time.time() - started, text)
         if text.lower().strip() in _JUNK:
             return ""
+        if vocab.replacements:
+            fixed = apply_replacements(text, vocab)
+            if fixed != text:
+                log.info("vocabulary fixed transcript: %r", fixed)
+            text = fixed
         return text
 
     @property

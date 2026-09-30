@@ -20,6 +20,7 @@ environment.
 | List microphones | `./run.sh --list-input-devices` |
 | Type instead of paste | `OLLIE_INJECT_MODE=type` |
 | Better transcription | `OLLIE_WHISPER_REPO=mlx-community/whisper-small.en-mlx` |
+| Words Whisper mishears | orb → **Custom words…** (edits `~/.ollie/vocabulary.txt`, see below) |
 
 Hotkeys can be named the way they are printed on your keyboard — `"right
 option"`, `"option"`, `"right command"`, `"caps lock"`, `f13` — or by the
@@ -34,6 +35,31 @@ instead of leaving it on the system default.
 Useful knobs that have no flag: `batch_debounce` (how long events are gathered
 before one narration pass — raise it for fewer, denser sentences),
 `history_window` (how many spoken lines the filter remembers), `max_words`.
+
+### Custom words
+
+Right-click the orb → **Custom words…** opens `~/.ollie/vocabulary.txt`,
+creating it if needed. Its path is the `vocabulary_file` setting. Put one
+entry on each line:
+
+```
+# lines starting with # are comments
+Kubernetes
+kubectl
+cloud code -> Claude Code
+```
+
+- **Plain words** go into Whisper's prompt as a glossary. This biases it toward
+  those spellings but can't guarantee them. The bias only covers the first 30
+  seconds of a recording, and Whisper keeps only about 200 tokens of prompt,
+  so extra words are dropped and a warning is logged.
+- **`wrong -> right` rules** are applied to the transcript afterwards. Matching
+  ignores case and needs whole words, and it always applies. When the prompt
+  isn't enough, add the mishearing you actually see in `~/.ollie/ollie.log`
+  (`transcribed …: '…'`) as a rule.
+
+Changes apply on the next push-to-talk, without a restart. A larger Whisper
+model (see *Better transcription* above) also helps with rare words.
 
 ### Models
 
@@ -114,6 +140,7 @@ ollie/
   filter.py               Ollama dedup/condense, spoken-history memory
   tts.py                  `say` -> WAV -> playback with amplitude
   stt.py                  mlx-whisper, push-to-talk capture
+  vocabulary.py           custom words: Whisper prompt + "wrong -> right" fixes
   injector.py             pasteboard + synthesised ⌘V (or unicode typing)
   hotkey.py               global push-to-talk listener
   orb.py                  always-on-top transparent Cocoa window

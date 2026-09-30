@@ -60,6 +60,18 @@ def _row(name, detail, status, note=""):
     return {"name": name, "detail": detail, "status": status, "note": note}
 
 
+def _vocabulary_row(cfg: Config) -> dict:
+    from .vocabulary import VocabularyFile
+
+    vocab_file = VocabularyFile(cfg.vocabulary_file)
+    if not vocab_file.path.exists():
+        return _row("Custom words", str(vocab_file.path), INFO,
+                    "none yet — add them from the orb's Custom words… item")
+    vocab = vocab_file.get()
+    return _row("Custom words", str(vocab_file.path), INFO,
+                f"{len(vocab.terms)} words, {len(vocab.replacements)} replacements")
+
+
 def gather(cfg: Config) -> list[dict]:
     from .injector import accessibility_trusted
     from .permissions import AUTHORIZED, input_monitoring_status, microphone_status
@@ -77,6 +89,7 @@ def gather(cfg: Config) -> list[dict]:
         _row("Speech-to-text", f"mlx-whisper · {cfg.whisper_repo}",
              OK if whisper_cache else WARN,
              whisper_cache or "model not downloaded yet (fetched on first run)"),
+        _vocabulary_row(cfg),
         _row("Narration filter", f"Ollama · {filter_model}",
              OK if up and filter_model in models else (WARN if up else BAD),
              (models.get(filter_model, "model not pulled") if up
